@@ -39,4 +39,41 @@ else
 fi
 
 echo ""
+echo "==> GitHub Actions"
+# The reusable workflows pin third-party actions by major tag, so patches and
+# minors reach a caller on their own. A new major does not, and it can rename or
+# drop an input, so this reports the drift and leaves the edit to whoever has
+# read the release notes. The `uses:` line that names devkit itself carries a
+# path, so the pattern below skips it.
+pins=$(grep -hoE 'uses: [A-Za-z0-9._-]+/[A-Za-z0-9._-]+@v[0-9]+' \
+  .github/workflows/*.yml github/*.yml | sed 's/^uses: //' | sort -u || true)
+
+action_drift=0
+while IFS= read -r pin; do
+  [[ -n "${pin}" ]] || continue
+  repo="${pin%@*}"
+  pinned="${pin##*@v}"
+
+  latest=$(gh api "repos/${repo}/releases/latest" -q .tag_name 2>/dev/null || true)
+  if [[ -z "${latest}" ]]; then
+    echo "${repo}: no published release to compare against"
+    continue
+  fi
+
+  latest_major="${latest#v}"
+  latest_major="${latest_major%%.*}"
+  if [[ "${pinned}" == "${latest_major}" ]]; then
+    echo "${repo}@v${pinned} is current (${latest})"
+  else
+    echo "${repo}@v${pinned} -> v${latest_major} (${latest})"
+    action_drift=1
+  fi
+done <<< "${pins}"
+
+if [[ "${action_drift}" -eq 1 ]]; then
+  echo ""
+  echo "Action majors are reported, never written. Read the release notes first."
+fi
+
+echo ""
 echo "Review the diff, then move the major tag and clear the consumers' caches."

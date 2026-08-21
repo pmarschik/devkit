@@ -251,14 +251,39 @@ A library needs no release workflow. `release:push` writes the tags and the
 GitHub release notes, and the module proxy does the publishing.
 
 Unlike a mise include, `uses:` resolves on every run, so a moved `v2` tag
-reaches a caller immediately. Nothing to clear.
+reaches a caller immediately. Nothing to clear. The third-party actions inside
+the reusable workflows are pinned by major tag, and `upgrade` reports a new
+major rather than writing it.
+
+### When the release run never fired
+
+GitHub creates no push event for more than three tags at once, so a release
+that pushed its tags together has no run at all — and the Actions tab cannot
+re-try a run that does not exist. `release:push` avoids that by sending the root
+tag on its own, so the usual cause is a `jj git push` made around the task,
+which carries the bookmark and every tag together. `jj op log` shows it: one
+`push bookmark main, tags …` entry covering the lot.
+
+Dispatch the run instead of re-trying it:
+
+```bash
+gh workflow run release.yml -f tag=vX.Y.Z
+```
+
+A dispatch reads the workflow from the default branch, so it also reaches a tag
+whose own commit predates the `workflow_dispatch` trigger. It checks the tag out
+and passes it as `GORELEASER_CURRENT_TAG`.
+
+Give the consumer's goreleaser config `release.mode: keep-existing`. That is the
+default, and spelling it out is what stops a dispatched re-run from replacing
+the notes `release:push` wrote with the whole `CHANGELOG.md`.
 
 ## Maintaining this repo
 
 | Task          | What it does                                             |
 | ------------- | -------------------------------------------------------- |
 | `check`       | shellcheck over everything under `mise/`                 |
-| `upgrade`     | Bumps the pinned dprint plugin and hk versions           |
+| `upgrade`     | Bumps dprint plugins and hk, reports action-major drift  |
 | `validate-hk` | Evaluates `hk/go-workspace.pkl` the way a consumer would |
 
 Every shared config pins the versions it names, so a consumer gets the same

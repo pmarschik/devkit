@@ -7,9 +7,11 @@ on:
     tags:
       - "v[0-9]*"
   # Recovery path: GitHub creates no push event when more than three tags
-  # arrive at once, and a release whose event never fired needs a way back in.
-  # release:push pushes the root tag alone to avoid that, so this is for the
-  # run that failed for some other reason.
+  # arrive at once, and a release whose event never fired has no run to re-try
+  # from the Actions tab. release:push pushes the root tag alone to avoid that,
+  # so this covers a push made around the task and a run that died for some
+  # other reason. A dispatch reads this file from the default branch, so it
+  # reaches a tag whose own commit predates the trigger.
   workflow_dispatch:
     inputs:
       tag:

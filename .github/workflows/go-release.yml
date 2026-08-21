@@ -4,6 +4,11 @@
 # A library needs none of this. `mise run release:push` writes the tags and the
 # GitHub release notes itself, and a library publishes through the module proxy
 # rather than through an artifact.
+#
+# The consumer's goreleaser config wants `release.mode: keep-existing`. That is
+# the default, but spelling it out matters here: `release:push` writes the notes
+# for one version, this job can only offer the whole CHANGELOG.md, and a
+# dispatched re-run would hand the second over the first.
 name: go-release
 
 on:
