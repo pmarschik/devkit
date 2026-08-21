@@ -111,6 +111,76 @@ create_release_tags() {
   success "Tagged: ${RELEASE_TAGS[*]}"
 }
 
+# Echo the origin URL, empty when there is no origin.
+remote_url() {
+  if [[ "${VCS}" == "jj" ]]; then
+    jj git remote list 2>/dev/null | awk '$1 == "origin" { print $2; exit }'
+  else
+    git remote get-url origin 2>/dev/null || true
+  fi
+}
+
+# Tags per push, 0 meaning "all of them in one push".
+#
+# GitHub creates no push event when more than three tags arrive in one push
+# (https://docs.github.com/en/webhooks/webhook-events-and-payloads#push), and
+# no event means no workflow run. A ten-module repo writes ten tags, so one
+# push would silence the very workflow the release depends on.
+#
+# That quirk is GitHub's alone, so every other forge takes the tags in a single
+# push and a single key touch. Three per push rather than one for the same
+# reason: each push wants its own touch.
+#
+# A GitHub Enterprise host under its own domain does not match, so set
+# DEVKIT_TAG_BATCH=3 in that repo. Setting it also overrides the batch size
+# anywhere else, and DEVKIT_TAG_BATCH=0 turns batching off.
+tag_batch_size() {
+  if [[ -n "${DEVKIT_TAG_BATCH:-}" ]]; then
+    echo "${DEVKIT_TAG_BATCH}"
+  elif [[ "$(remote_url)" == *github.com[:/]* ]]; then
+    echo 3
+  else
+    echo 0
+  fi
+}
+
+# Push tag names, batched for GitHub. Needs detect_vcs to have run.
+#
+# The batching covers the module tags too, even though no workflow watches them
+# today: a repo that adds one later must not have to rediscover this.
+push_tag_batch() {
+  local name args=()
+  if [[ "${VCS}" == "jj" ]]; then
+    for name in "$@"; do args+=(--tag "${name}"); done
+    jj git push "${args[@]}"
+  else
+    for name in "$@"; do args+=("refs/tags/${name}"); done
+    HK=0 git push origin "${args[@]}"
+  fi
+  info "Pushed: $*"
+}
+
+push_tags() {
+  local batch=() name size
+  [[ $# -eq 0 ]] && return 0
+
+  size=$(tag_batch_size)
+  if [[ "${size}" -le 0 ]]; then
+    push_tag_batch "$@"
+    return 0
+  fi
+
+  for name in "$@"; do
+    batch+=("${name}")
+    if [[ ${#batch[@]} -eq ${size} ]]; then
+      push_tag_batch "${batch[@]}"
+      batch=()
+    fi
+  done
+  [[ ${#batch[@]} -gt 0 ]] && push_tag_batch "${batch[@]}"
+  return 0
+}
+
 # Verify that release:prepare has already put the jj release state where push
 # will publish it: the main bookmark has to sit on the release commit.
 #

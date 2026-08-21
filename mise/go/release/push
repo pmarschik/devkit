@@ -85,7 +85,13 @@ if [[ "${DRY_RUN}" == "true" ]]; then
     verify_jj_prepared_release "${RELEASE_COMMIT}"
     success "Prepared release state verified at ${RELEASE_REV} (${RELEASE_COMMIT:0:12})"
   fi
-  info "Would tag the release commit, push bookmark main, then tag ${version}, then $((${#RELEASE_TAGS[@]} - 1)) module tags:"
+  BATCH_SIZE=$(tag_batch_size)
+  if [[ "${BATCH_SIZE}" -le 0 ]]; then
+    BATCH_DESC="in one push"
+  else
+    BATCH_DESC="in batches of ${BATCH_SIZE}"
+  fi
+  info "Would tag the release commit, push bookmark main, then tag ${version}, then $((${#RELEASE_TAGS[@]} - 1)) module tags ${BATCH_DESC}:"
   printf '         %s\n' "${RELEASE_TAGS[@]:1}"
   info "Would open or update the GitHub release ${version} from CHANGELOG.md"
   info "Would wait for the proxy to serve ${ROOT_MODULE}@${version}, tidy go.sum and commit"
@@ -140,32 +146,21 @@ else
 fi
 success "Branch pushed"
 
-# Root tag alone — GitHub suppresses push events when >3 tags arrive at once,
-# and .github/workflows/release.yml listens for exactly this one.
+# Root tag alone — GitHub suppresses the push event when more than three tags
+# arrive at once, and .github/workflows/release.yml listens for exactly this one.
 info "Pushing root tag ${version} (triggers GitHub Actions)…"
-if [[ "${VCS}" == "jj" ]]; then
-  jj git push --tag "${version}"
-else
-  HK=0 git push origin "refs/tags/${version}"
-fi
+push_tags "${version}"
 success "Root tag pushed"
 
 # The module tags carry no artifacts — they are how `go get` finds each module
-# at this version — so they can all go at once, after the root tag.
-info "Pushing sub-module tags…"
-if [[ "${VCS}" == "jj" ]]; then
-  expected_release_tags "${version}"
-  SUBMODULE_TAG_ARGS=()
-  for name in "${RELEASE_TAGS[@]:1}"; do
-    SUBMODULE_TAG_ARGS+=(--tag "${name}")
-  done
-  if [[ ${#SUBMODULE_TAG_ARGS[@]} -gt 0 ]]; then
-    jj git push "${SUBMODULE_TAG_ARGS[@]}"
-  fi
-else
-  HK=0 git push --tags
+# at this version. push_tags batches them on GitHub, so a workflow that watches
+# them keeps getting an event, and sends them in one push anywhere else.
+expected_release_tags "${version}"
+if [[ ${#RELEASE_TAGS[@]} -gt 1 ]]; then
+  info "Pushing $((${#RELEASE_TAGS[@]} - 1)) sub-module tags…"
+  push_tags "${RELEASE_TAGS[@]:1}"
+  success "Sub-module tags pushed"
 fi
-success "Sub-module tags pushed"
 
 # GoReleaser, where a repo runs it, opens the release when the root tag lands
 # but leaves the notes to whatever it generates. This writes the changelog
