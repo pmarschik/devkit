@@ -1,14 +1,20 @@
-<!-- read_when: wiring a repo to the shared tooling, or changing anything under mise/ -->
+<!-- read_when: wiring a repo to the shared tooling, or changing anything under mise/, dprint/, hk/ or golangci/ -->
 
 # devkit
 
-Shared development tooling for my repos. Each top-level directory holds one
-kind of asset, and each consumer pulls it with the mechanism its own tool
-provides.
+Shared development tooling for my repos. Each top-level directory holds one kind
+of asset, and each consumer pulls it with the mechanism its own tool provides.
 
-| Directory         | Consumed by                             |
-| ----------------- | --------------------------------------- |
-| `mise/go-release` | `[task_config] includes` in `mise.toml` |
+| Directory  | Holds                       | Consumed by                             |
+| ---------- | --------------------------- | --------------------------------------- |
+| `mise/go`  | Workspace and release tasks | `[task_config] includes` in `mise.toml` |
+| `dprint/`  | Formatter base config       | `extends` in `.config/dprint.json`      |
+| `hk/`      | Git-hook config             | `amends` in `.config/hk.pkl`            |
+| `golangci` | Linter config               | `mise run sync-golangci` copies it      |
+
+Three of the four are referenced, so a consumer holds a one-line file and the
+content stays here. golangci-lint has no remote-extends mechanism, so that one
+is copied, and `sync-golangci` is how it gets copied.
 
 ## mise task sets
 
@@ -17,27 +23,43 @@ mise clones an included directory and treats it the way it treats a local
 name, and a subdirectory becomes the task prefix. The include path itself
 contributes nothing to the name.
 
-That is why the tasks sit one level deeper than the include points:
+That is why the release tasks sit one level deeper than the include points:
 
 ```
-mise/go-release/          <- the include path
-└── release/              <- the task prefix
-    ├── _lib.sh           <- leading underscore, so not a task
+mise/go/                  <- the include path
+├── _lib.sh               <- leading underscore, so not a task
+├── fmt                   <- bare task names
+├── lint
+├── test
+├── tidy
+├── typos
+├── setup
+├── build
+├── sync-golangci
+├── check/                <- a task prefix
+│   ├── _default          <- check, not check:_default
+│   └── changed           <- check:changed
+└── release/
     ├── prepare           <- release:prepare
     ├── push
     ├── rollback
     └── post-tidy
 ```
 
-Flatten that and you get a top-level task called `push`, which is both wrong
-and dangerous.
+Flatten `release/` and you get a top-level task called `push`, which is both
+wrong and dangerous.
+
+`_default` is the one underscore mise does read. A file by that name becomes the
+directory's own task, so `check/_default` answers to `check` and its siblings
+get the `check:` prefix. A file called `default` does not — that one becomes
+`check:default`.
 
 Wire it into `.config/mise/config.toml`:
 
 ```toml
 [task_config]
 includes = [
-  "git::https://github.com/pmarschik/devkit.git//mise/go-release?ref=v1",
+  "git::https://github.com/pmarschik/devkit.git//mise/go?ref=v2",
   ".config/mise/tasks",
 ]
 ```
@@ -52,12 +74,12 @@ Rules for that list:
   no error and no exit code — the tasks simply do not appear. After you change
   the list, run `mise tasks ls` and confirm you can see them.
 
-The URL form is strict. mise matches it against a regex that accepts
-`https://` and `ssh://` only, and the repository part must end in `.git`:
+The URL form is strict. mise matches it against a regex that accepts `https://`
+and `ssh://` only, and the repository part must end in `.git`:
 
 ```
-git::https://github.com/pmarschik/devkit.git//mise/go-release?ref=v1
-git::ssh://git@github.com/pmarschik/devkit.git//mise/go-release?ref=v1
+git::https://github.com/pmarschik/devkit.git//mise/go?ref=v2
+git::ssh://git@github.com/pmarschik/devkit.git//mise/go?ref=v2
 ```
 
 The scp form `git@github.com:pmarschik/devkit.git` does not match, and neither
@@ -66,21 +88,22 @@ the clone needs a key.
 
 ### Pinning
 
-Consumers pin `?ref=v1`. The `v1` tag moves forward on every
-backward-compatible change. A change that breaks a consumer becomes `v2`, and
-repos move to it one at a time.
+Consumers pin `?ref=v2`. The `v2` tag moves forward on every
+backward-compatible change. A change that breaks a consumer becomes `v3`, and
+repos move to it one at a time. The `dprint` and `hk` URLs carry the same major,
+so one tag moves every asset together.
 
 Move the tag after the change lands:
 
 ```bash
-jj tag set v1 -r @- --allow-move
-jj git push --tag v1
+jj tag set v2 -r @- --allow-move
+jj git push --tag v2
 ```
 
 **A moved tag does not reach a consumer on its own.** mise clones the include
 once, into `$(mise cache path)/remote-git-tasks-cache/<hash of the URL>`, and
 pins that clone to the commit the ref named at the time. It never notices that
-`v1` now points somewhere else, so the repo keeps running the old task with a
+`v2` now points somewhere else, so the repo keeps running the old task with a
 clean exit and no warning.
 
 Clear the entry in each consumer after you move the tag:
@@ -94,34 +117,109 @@ mise tasks ls
 cache untouched, so the next plain `mise run` is stale again. Use it to try a
 change out, and delete the directory to make the change stick.
 
-## mise/go-release
+## mise/go
 
-Releases a Go workspace repo. One commit carries the root tag `vX.Y.Z` and a
-`<subdir>/vX.Y.Z` tag for every other module in `go.work`.
+### Workspace tasks
 
-| Task                | What it does                                                     |
-| ------------------- | ---------------------------------------------------------------- |
-| `release:prepare`   | Writes the changelog, pins the module versions, commits and tags |
-| `release:push`      | Verifies the prepared release, pushes it, then tidies `go.sum`   |
-| `release:rollback`  | Undoes a local `release:prepare` that you have not pushed        |
-| `release:post-tidy` | Redoes the `go.sum` step when the proxy was still catching up    |
+Every task walks the module list in `go.work`, including `example/*`, so a new
+module joins as soon as the workspace lists it.
+
+| Task            | What it does                                            |
+| --------------- | ------------------------------------------------------- |
+| `check`         | `fmt`, `typos`, `test`, then `lint`                     |
+| `check:changed` | `hk check`, so only the changed files                   |
+| `fmt`           | `golangci-lint run --fix` per module, then `dprint fmt` |
+| `lint`          | `golangci-lint run` per module, then `dprint check`     |
+| `test`          | `go test ./...` per module                              |
+| `tidy`          | `go mod tidy` in every module, in parallel              |
+| `typos`         | Spell check                                             |
+| `setup`         | `go mod download` and `hk install`                      |
+| `build`         | `go build ./...`                                        |
+| `sync-golangci` | Copies `golangci/go-workspace.yml` to `.config/`        |
+
+`lint` and `test` forward extra arguments, and both take `--no-cache`.
+`sync-golangci --diff-only` reports drift without writing.
+
+`check` runs `lint` last rather than as a dependency, because two
+golangci-lint runs in parallel collide on its lock.
+
+### Release tasks
+
+One commit carries the root tag `vX.Y.Z` and a `<subdir>/vX.Y.Z` tag for every
+other module in `go.work`.
+
+| Task                | What it does                                                         |
+| ------------------- | -------------------------------------------------------------------- |
+| `release:prepare`   | Writes the changelog, pins the module versions, describes the commit |
+| `release:push`      | Verifies the prepared release, tags it, pushes it, tidies `go.sum`   |
+| `release:rollback`  | Undoes a local `release:prepare` that you have not pushed            |
+| `release:post-tidy` | Redoes the `go.sum` step when the proxy was still catching up        |
 
 Run `mise run release:push --dry-run` to check the prepared state and print
 what would be pushed. It reaches no remote and changes nothing locally.
 
-The tasks work under jj and under git. Under jj `release:prepare` commits and
-tags, because both are local and reversible there. Under git those steps wait
-until `release:push`, where an unwanted commit costs a reset.
+The tasks work under jj and under git. Under jj `release:prepare` describes the
+working copy and leaves it there, untagged and mutable, so `jj diff` shows the
+release and you can amend it. `release:push` writes the tags, because a tag
+freezes its commit under jj and would slide the working copy onto an empty
+child mid-review.
 
 ### What a consuming repo must provide
 
-- `go.work` — the module list. `discover_modules` reads it and skips
-  directories matching its exclude glob, `example/*` by default.
+- `go.work` — the module list. The workspace tasks walk all of it, and
+  `discover_modules` in the release tasks skips directories matching its
+  exclude glob, `example/*` by default.
+- `.config/dprint.json` extending `dprint/go.json` from here.
+- `.config/golangci.yml`, which `sync-golangci` writes.
 - `.config/cliff.toml` with `tag_pattern = "^v[0-9]"`. Without it a submodule
   tag such as `parsers/toml/v0.5.0` wins the "latest tag" race and every
-  `go.mod` gets pinned to that name. Both tasks guard against the result.
+  `go.mod` gets pinned to that name. Both release tasks guard against the
+  result.
 - `CHANGELOG.md`, written by `git cliff` and formatted by `hk`.
 - `gh`, authenticated, for the GitHub release.
-- The tools themselves in `[tools]`: `git-cliff`, `hk`, `cocogitto`, `go`.
+- The tools themselves in `[tools]`: `go`, `golangci-lint`, `dprint`, `hk`,
+  `typos-cli`, `git-cliff`, `cocogitto`.
+
+## dprint
+
+`.config/dprint.json` in a consumer:
+
+```json
+{
+  "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v2/dprint/go.json",
+  "includes": ["**/*.{json,yaml,yml,toml,md}"]
+}
+```
+
+`plugins` and `excludes` merge with what the consumer adds, so a repo lists only
+its own extra excludes. `includes` is the exception: dprint rejects it in an
+extended file, so every consumer repeats the line above.
+
+## hk
+
+`.config/hk.pkl` in a consumer:
+
+```pkl
+amends "https://raw.githubusercontent.com/pmarschik/devkit/v2/hk/go-workspace.pkl"
+```
+
+The file defines the `pre-commit`, `pre-push`, `fmt`, `lint`, `fix` and `check`
+hooks. A consumer amending it can override any hook or add steps.
+
+## Maintaining this repo
+
+| Task          | What it does                                             |
+| ------------- | -------------------------------------------------------- |
+| `check`       | shellcheck over everything under `mise/`                 |
+| `upgrade`     | Bumps the pinned dprint plugin and hk versions           |
+| `validate-hk` | Evaluates `hk/go-workspace.pkl` the way a consumer would |
+
+Every shared config pins the versions it names, so a consumer gets the same
+plugins whatever day it clones. `upgrade` is what moves those pins, and it runs
+`validate-hk` after an hk bump: hk renames and retypes its builtins between
+minors, and the shared pkl reaches into several of them.
+
+After a change: `mise run check`, land it, move the major tag, then clear the
+cache in each consumer.
 
 Repos that use this set: `kongfig`, `adfast`.
