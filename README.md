@@ -12,9 +12,25 @@ provides.
 
 ## mise task sets
 
-mise clones an included directory and runs the file tasks inside it. The
-directory name becomes the task prefix, so `mise/go-release` gives you
-`release:prepare`, `release:push` and the rest.
+mise clones an included directory and treats it the way it treats a local
+`.config/mise/tasks`. A file at the root of the include becomes a bare task
+name, and a subdirectory becomes the task prefix. The include path itself
+contributes nothing to the name.
+
+That is why the tasks sit one level deeper than the include points:
+
+```
+mise/go-release/          <- the include path
+└── release/              <- the task prefix
+    ├── _lib.sh           <- leading underscore, so not a task
+    ├── prepare           <- release:prepare
+    ├── push
+    ├── rollback
+    └── post-tidy
+```
+
+Flatten that and you get a top-level task called `push`, which is both wrong
+and dangerous.
 
 Wire it into `.config/mise/config.toml`:
 
@@ -26,12 +42,27 @@ includes = [
 ]
 ```
 
-Two rules for that list:
+Rules for that list:
 
 - Setting `includes` replaces the default task discovery, so the local
   directory needs its own entry.
 - The last include wins on a name clash. Keep the local directory last and a
   repo can shadow one shared task without forking the set.
+- **An include mise cannot parse is skipped in silence.** There is no warning,
+  no error and no exit code — the tasks simply do not appear. After you change
+  the list, run `mise tasks ls` and confirm you can see them.
+
+The URL form is strict. mise matches it against a regex that accepts
+`https://` and `ssh://` only, and the repository part must end in `.git`:
+
+```
+git::https://github.com/pmarschik/devkit.git//mise/go-release?ref=v1
+git::ssh://git@github.com/pmarschik/devkit.git//mise/go-release?ref=v1
+```
+
+The scp form `git@github.com:pmarschik/devkit.git` does not match, and neither
+does `file://`. Use the `https` line for a public repo and the `ssh` line when
+the clone needs a key.
 
 mise caches the clone under `$MISE_CACHE_DIR/remote-git-tasks-cache`. Set
 `MISE_TASK_REMOTE_NO_CACHE=1` to force a refetch while you change a task here.
