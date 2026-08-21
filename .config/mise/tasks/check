@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Lint every shared shell task"
+set -euo pipefail
+
+# shellcheck resolves a `# shellcheck source=` path relative to the working
+# directory, so each file is checked from its own directory. The include nests
+# tasks in subdirectories, so the file list has to come from find rather than a
+# glob. Everything under mise/ is a shell script.
+find mise -type f -print | sort | while read -r file; do
+  (cd "$(dirname "$file")" && shellcheck -x "$(basename "$file")")
+done
+
+dprint check -c .config/dprint.json

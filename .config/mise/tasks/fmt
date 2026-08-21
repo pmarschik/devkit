@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Format the markdown, JSON and TOML in this repo"
+set -euo pipefail
+dprint fmt -c .config/dprint.json

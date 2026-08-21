@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Evaluate the shared hk config the way a consumer would"
+set -euo pipefail
+
+# The shared pkl reaches into hk's Builtins, and hk renames and retypes those
+# between minors. A consumer only finds out when a hook runs, so evaluate the
+# file here: a throwaway directory holding nothing but the one-line hk.pkl a
+# consumer writes, which makes this the consumer's exact code path.
+SHARED="$(pwd)/hk/go-workspace.pkl"
+[[ -f "${SHARED}" ]] || { echo "run this from the devkit root" >&2; exit 1; }
+
+DIR=$(mktemp -d)
+trap 'rm -rf "${DIR}"' EXIT
+mkdir -p "${DIR}/.config"
+printf 'amends "%s"\n' "${SHARED}" > "${DIR}/.config/hk.pkl"
+
+# --cd rather than a subshell cd: hk reads the config relative to that directory
+# and nothing here depends on the caller's working directory afterwards.
+hk --cd "${DIR}" validate
+echo "hk config evaluates"

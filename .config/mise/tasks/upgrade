@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#MISE description="Bump the versions pinned in the shared configs"
+set -euo pipefail
+
+# The shared configs pin every version they name, so a consumer gets the same
+# plugins and the same hk whatever day it clones the include. That only stays
+# current if something moves the pins, and this task is that something.
+#
+# It writes files and nothing else. Review the diff, land it, then move the
+# major tag so the consumers see it.
+
+echo "==> dprint plugins"
+dprint config update -y -c dprint/go.json
+
+echo ""
+echo "==> hk"
+current=$(sed -n 's|.*/releases/download/v\([0-9][0-9.]*\)/hk@.*|\1|p' hk/go-workspace.pkl | head -1)
+latest=$(gh api repos/jdx/hk/releases/latest -q .tag_name)
+latest="${latest#v}"
+
+if [[ "${current}" == "${latest}" ]]; then
+  echo "hk ${current} is current"
+else
+  # The pkl amends and imports a release asset, so a version that GitHub does
+  # not serve turns every hk run in every consumer into a fetch error. Check it
+  # before writing the pin rather than after.
+  url="https://github.com/jdx/hk/releases/download/v${latest}/hk@${latest}"
+  curl -fsIL -o /dev/null "${url}" || { echo "no such release asset: ${url}" >&2; exit 1; }
+
+  sed -i.bak -E "s|/releases/download/v[0-9.]+/hk@[0-9.]+#|/releases/download/v${latest}/hk@${latest}#|g" hk/go-workspace.pkl
+  rm -f hk/go-workspace.pkl.bak
+  echo "hk ${current} -> ${latest}"
+
+  # A new hk can rename or retype a Builtins member, and the pkl reaches into
+  # several of them. Catch that here rather than in six consumers.
+  echo ""
+  echo "==> validating the bumped hk config"
+  mise run validate-hk
+fi
+
+echo ""
+echo "Review the diff, then move the major tag and clear the consumers' caches."

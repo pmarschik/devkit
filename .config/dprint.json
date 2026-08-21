@@ -1,0 +1,10 @@
+{
+  // Dogfooding: devkit formats itself with the base it publishes. The path is
+  // relative rather than the raw.githubusercontent URL a consumer uses, so a
+  // change here takes effect before it is tagged.
+  "extends": "../dprint/go.json",
+  // dprint rejects "includes" in an extended file, so it lives here.
+  "includes": [
+    "**/*.{json,yaml,yml,toml,md}"
+  ]
+}
