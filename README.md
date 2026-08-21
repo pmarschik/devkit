@@ -64,15 +64,11 @@ The scp form `git@github.com:pmarschik/devkit.git` does not match, and neither
 does `file://`. Use the `https` line for a public repo and the `ssh` line when
 the clone needs a key.
 
-mise caches the clone under `$MISE_CACHE_DIR/remote-git-tasks-cache`. Set
-`MISE_TASK_REMOTE_NO_CACHE=1` to force a refetch while you change a task here.
-
 ### Pinning
 
 Consumers pin `?ref=v1`. The `v1` tag moves forward on every
-backward-compatible change, so a fix reaches every repo on its next
-`mise run`. A change that breaks a consumer becomes `v2`, and repos move to it
-one at a time.
+backward-compatible change. A change that breaks a consumer becomes `v2`, and
+repos move to it one at a time.
 
 Move the tag after the change lands:
 
@@ -80,6 +76,23 @@ Move the tag after the change lands:
 jj tag set v1 -r @- --allow-move
 jj git push --tag v1
 ```
+
+**A moved tag does not reach a consumer on its own.** mise clones the include
+once, into `$(mise cache path)/remote-git-tasks-cache/<hash of the URL>`, and
+pins that clone to the commit the ref named at the time. It never notices that
+`v1` now points somewhere else, so the repo keeps running the old task with a
+clean exit and no warning.
+
+Clear the entry in each consumer after you move the tag:
+
+```bash
+rm -rf "$(mise cache path)/remote-git-tasks-cache"
+mise tasks ls
+```
+
+`MISE_TASK_REMOTE_NO_CACHE=1` refetches for one invocation only. It leaves the
+cache untouched, so the next plain `mise run` is stale again. Use it to try a
+change out, and delete the directory to make the change stick.
 
 ## mise/go-release
 
