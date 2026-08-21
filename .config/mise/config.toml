@@ -1,0 +1,14 @@
+# :schema https://mise.jdx.dev/schema/mise.json
+[tools]
+shellcheck = "latest"
+
+[tasks.check]
+description = "Lint every shared shell task"
+# shellcheck resolves `source _lib.sh` relative to the working directory, so it
+# runs from inside each task set rather than from the repo root.
+run = """
+set -euo pipefail
+for dir in mise/*/; do
+  (cd "$dir" && shellcheck ./*)
+done
+"""
