@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Run the quality gates without writing files (for CI)"
+#MISE depends=["typos", "test"]
+set -euo pipefail
+# Same gates as `check`, minus `fmt`. fmt rewrites files, which a CI run must
+# not do: it would either fail on a dirty tree later or hide the formatting
+# problem it was supposed to report. `lint` covers the same ground read-only,
+# because it runs golangci-lint without --fix and dprint in check mode.
+#
+# lint runs here rather than in depends, so it never races another
+# golangci-lint over the same lock.
+mise run lint

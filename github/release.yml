@@ -1,0 +1,27 @@
+# Copy to .github/workflows/release.yml in a repo that ships binaries. A
+# library needs no release workflow — `mise run release:push` does that work.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  # Recovery path: GitHub creates no push event when more than three tags
+  # arrive at once, and a release whose event never fired needs a way back in.
+  # release:push pushes the root tag alone to avoid that, so this is for the
+  # run that failed for some other reason.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Root release tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: pmarschik/devkit/.github/workflows/go-release.yml@v2
+    with:
+      tag: ${{ inputs.tag || '' }}

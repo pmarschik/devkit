@@ -1,0 +1,56 @@
+# Reusable release for a Go repo that ships binaries. Copy github/release.yml
+# out of this repo as the caller.
+#
+# A library needs none of this. `mise run release:push` writes the tags and the
+# GitHub release notes itself, and a library publishes through the module proxy
+# rather than through an artifact.
+name: go-release
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: GoReleaser config path
+        type: string
+        default: .config/goreleaser.yaml
+      tag:
+        description: Root release tag to build. Empty means the tag that triggered the caller.
+        type: string
+        default: ""
+      goreleaser-version:
+        description: GoReleaser version constraint
+        type: string
+        default: "~> v2"
+      runs-on:
+        description: Runner label
+        type: string
+        default: ubuntu-latest
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      # fetch-depth: 0 because GoReleaser reads the tag history to resolve the
+      # version and the previous release.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: ${{ inputs.goreleaser-version }}
+          args: release --config ${{ inputs.config }} --release-notes CHANGELOG.md --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A release commit in a workspace repo carries the root tag and one
+          # tag per module. Name the root tag rather than letting git's tag
+          # ordering pick, or a module tag builds the release.
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag || github.ref_name }}

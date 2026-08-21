@@ -1,0 +1,74 @@
+# Reusable CI for a Go repo. A consumer calls it from a five-line caller
+# workflow — copy github/ci.yml out of this repo and commit it. GitHub Actions
+# resolves `uses:` on every run, so a moved v2 tag reaches a caller at once. The
+# mise include cache problem does not apply here.
+#
+# Every job installs the repo's own tools with mise and then runs a devkit task,
+# so CI and a local `mise run` execute the same code.
+name: go-ci
+
+on:
+  workflow_call:
+    inputs:
+      race:
+        description: Also run the tests with -race
+        type: boolean
+        default: true
+      vuln:
+        description: Run govulncheck
+        type: boolean
+        default: true
+      coverage-floor:
+        description: Fail below this root-module coverage percentage. 0 disables the job.
+        type: number
+        default: 0
+      runs-on:
+        description: Runner label
+        type: string
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      # Lint, spell check and test every module in go.work. `ci` leaves the
+      # tree alone, unlike the local `check`, which formats first.
+      - run: mise run ci
+
+  race:
+    if: inputs.race
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: mise run test -- -race
+
+  coverage:
+    if: inputs.coverage-floor > 0
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      # The root module only. A workspace-wide profile needs -coverpkg to name
+      # every module, and the number it produces answers a different question.
+      - name: Coverage floor
+        shell: bash
+        run: |
+          go test -coverprofile=coverage.out -coverpkg=./... ./...
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/, "", $3); print $3 }')
+          echo "total coverage: ${total}%"
+          awk -v total="${total}" -v floor="${{ inputs.coverage-floor }}" \
+            'BEGIN { exit (total + 0 < floor + 0) ? 1 : 0 }'
+
+  vuln:
+    if: inputs.vuln
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

@@ -1,0 +1,25 @@
+# Copy to .github/workflows/ci.yml. A caller workflow cannot be referenced
+# remotely, so this one file lives in the consumer. Everything it runs stays in
+# devkit.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push cancels the run it superseded, except on main.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ci:
+    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v2
+    # with:
+    #   race: false
+    #   vuln: false
+    #   coverage-floor: 75

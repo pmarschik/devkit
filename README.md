@@ -5,16 +5,20 @@
 Shared development tooling for my repos. Each top-level directory holds one kind
 of asset, and each consumer pulls it with the mechanism its own tool provides.
 
-| Directory  | Holds                       | Consumed by                             |
-| ---------- | --------------------------- | --------------------------------------- |
-| `mise/go`  | Workspace and release tasks | `[task_config] includes` in `mise.toml` |
-| `dprint/`  | Formatter base config       | `extends` in `.config/dprint.json`      |
-| `hk/`      | Git-hook config             | `amends` in `.config/hk.pkl`            |
-| `golangci` | Linter config               | `mise run sync-golangci` copies it      |
+| Directory            | Holds                       | Consumed by                             |
+| -------------------- | --------------------------- | --------------------------------------- |
+| `mise/go`            | Workspace and release tasks | `[task_config] includes` in `mise.toml` |
+| `dprint/`            | Formatter base config       | `extends` in `.config/dprint.json`      |
+| `hk/`                | Git-hook config             | `amends` in `.config/hk.pkl`            |
+| `golangci`           | Linter config               | `mise run sync-golangci` copies it      |
+| `.github/workflows/` | Reusable CI and release     | `uses:` in a caller workflow            |
+| `github/`            | The caller workflows        | Copied into `.github/workflows/`        |
 
-Three of the four are referenced, so a consumer holds a one-line file and the
-content stays here. golangci-lint has no remote-extends mechanism, so that one
-is copied, and `sync-golangci` is how it gets copied.
+Everything except two files is referenced, so a consumer holds a one-line file
+and the content stays here. golangci-lint has no remote-extends mechanism, so
+that config is copied, and `sync-golangci` is how it gets copied. A GitHub
+Actions caller workflow cannot live in another repo either, so `github/` holds
+two stubs to copy once.
 
 ## mise task sets
 
@@ -29,6 +33,7 @@ That is why the release tasks sit one level deeper than the include points:
 mise/go/                  <- the include path
 ├── _lib.sh               <- leading underscore, so not a task
 ├── fmt                   <- bare task names
+├── ci
 ├── lint
 ├── test
 ├── tidy
@@ -128,6 +133,7 @@ module joins as soon as the workspace lists it.
 | --------------- | ------------------------------------------------------- |
 | `check`         | `fmt`, `typos`, `test`, then `lint`                     |
 | `check:changed` | `hk check`, so only the changed files                   |
+| `ci`            | `typos`, `test`, then `lint` — the same gates, no `fmt` |
 | `fmt`           | `golangci-lint run --fix` per module, then `dprint fmt` |
 | `lint`          | `golangci-lint run` per module, then `dprint check`     |
 | `test`          | `go test ./...` per module                              |
@@ -157,6 +163,17 @@ other module in `go.work`.
 
 Run `mise run release:push --dry-run` to check the prepared state and print
 what would be pushed. It reaches no remote and changes nothing locally.
+
+`release:push` pushes the branch, then the root tag alone, then the module tags.
+On a `github.com` remote those go three at a time, because GitHub creates no
+push event when more than three tags arrive in one push, and no event means no
+workflow run — a repo with ten modules would otherwise silence its own release
+workflow. Every other remote takes all of them in a single push, which is one
+key touch instead of four.
+
+`DEVKIT_TAG_BATCH` overrides the size. Set it to `3` on a GitHub Enterprise
+host, which the URL check does not recognize, and to `0` to send every tag at
+once.
 
 The tasks work under jj and under git. Under jj `release:prepare` describes the
 working copy and leaves it there, untagged and mutable, so `jj diff` shows the
@@ -205,6 +222,36 @@ amends "https://raw.githubusercontent.com/pmarschik/devkit/v2/hk/go-workspace.pk
 
 The file defines the `pre-commit`, `pre-push`, `fmt`, `lint`, `fix` and `check`
 hooks. A consumer amending it can override any hook or add steps.
+
+## GitHub Actions
+
+`.github/workflows/` holds two reusable workflows. A consumer copies a caller
+out of `github/` and the work stays here:
+
+| Reusable         | Caller               | Runs                                                   |
+| ---------------- | -------------------- | ------------------------------------------------------ |
+| `go-ci.yml`      | `github/ci.yml`      | `mise run ci`, plus optional race, coverage and vuln   |
+| `go-release.yml` | `github/release.yml` | GoReleaser on a root tag, for a repo shipping binaries |
+
+`go-ci.yml` installs the repo's own tools with `jdx/mise-action` and then runs
+`mise run ci`, so CI and a local run execute the same tasks. Its inputs turn the
+extra jobs on and off:
+
+```yaml
+jobs:
+  ci:
+    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v2
+    with:
+      race: true # default
+      vuln: true # default
+      coverage-floor: 75 # 0, the default, skips the job
+```
+
+A library needs no release workflow. `release:push` writes the tags and the
+GitHub release notes, and the module proxy does the publishing.
+
+Unlike a mise include, `uses:` resolves on every run, so a moved `v2` tag
+reaches a caller immediately. Nothing to clear.
 
 ## Maintaining this repo
 
