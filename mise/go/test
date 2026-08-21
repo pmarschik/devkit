@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#MISE description="Run all tests across workspace modules"
+#MISE alias="t"
+#MISE sources=["**/*.go", "go.work"]
+#USAGE flag "--no-cache" help="Bypass Go test result cache (translates to -count=1)"
+#USAGE arg "[args]..." help="Extra flags forwarded to go test (e.g. -run TestFoo -v)"
+set -euo pipefail
+# shellcheck source=_lib.sh
+source "$(dirname "$0")/_lib.sh"
+
+testargs=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-cache) go clean -testcache ;;
+    *) testargs+=("$arg") ;;
+  esac
+done
+
+root=$(pwd)
+failed=0
+while IFS= read -r mod; do
+  echo "==> $mod"
+  # ${a[@]+"${a[@]}"} rather than "${a[@]}": stock macOS bash is 3.2, where
+  # set -u treats an empty array expansion as an unbound variable.
+  if ! (cd "$root/$mod" && go test ${testargs[@]+"${testargs[@]}"} ./...); then
+    echo "FAIL test: $mod"
+    failed=1
+  fi
+done < <(workspace_module_dirs)
+
+exit $failed

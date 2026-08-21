@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Build the project"
+#MISE alias="bld"
+#MISE depends=["tidy"]
+#MISE sources=["**/*.go", "go.mod", "go.sum"]
+set -euo pipefail
+go build ./...

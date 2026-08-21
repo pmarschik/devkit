@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#MISE description="Undo a local release:prepare before release:push"
+set -euo pipefail
+# shellcheck source=../_lib.sh
+source "$(dirname "$0")/../_lib.sh"
+
+echo ""
+echo -e "${bold}↩ Rolling back prepared release…${reset}"
+echo ""
+
+detect_vcs
+info "VCS: ${VCS}"
+discover_modules
+release_prepare_paths
+
+confirm "Rollback local release:prepare output?" \
+  || { warn "Aborted."; echo ""; exit 0; }
+echo ""
+
+if [[ "${VCS}" == "jj" ]]; then
+  # Same two places release:push looks. release:prepare leaves the release at @,
+  # and a push that got as far as tagging leaves it at @- with an empty @ on top,
+  # because a tag freezes its commit and the working copy slides onto a child.
+  RELEASE_REV="@"
+  version=$(release_version_at @)
+  if [[ -z "${version}" && -z "$(jj diff -r @ --summary 2>/dev/null)" ]]; then
+    version=$(release_version_at @-)
+    if [[ -n "${version}" ]]; then
+      RELEASE_REV="@-"
+      info "Rolling back the prepared release at @- (empty working-copy child at @)"
+    fi
+  fi
+  [[ -n "${version}" ]] \
+    || die "neither @ nor the parent of an empty @ is a release commit — nothing to roll back"
+
+  release_commit=$(jj log -r "${RELEASE_REV}" --no-graph --template 'commit_id')
+  expected_release_tags "${version}"
+
+  # Only release:push creates the tags, so a rollback right after prepare finds
+  # none. Any that do exist come from a push that failed after tagging.
+  tags_to_delete=()
+  for name in "${RELEASE_TAGS[@]}"; do
+    tag_commit=$(jj log -r "${name}" --no-graph --template 'commit_id' 2>/dev/null || true)
+    if [[ "${tag_commit}" == "${release_commit}" ]]; then
+      tags_to_delete+=("${name}")
+    elif [[ -n "${tag_commit}" ]]; then
+      warn "Leaving ${name}; it does not point at the release commit"
+    fi
+  done
+
+  if [[ ${#tags_to_delete[@]} -gt 0 ]]; then
+    jj tag delete "${tags_to_delete[@]}"
+    success "Deleted tags: ${tags_to_delete[*]}"
+  else
+    info "No release tags to delete"
+  fi
+
+  main_commit=$(jj log -r main --no-graph --template 'commit_id' 2>/dev/null || true)
+  if [[ "${main_commit}" == "${release_commit}" ]]; then
+    jj bookmark set main -r "${RELEASE_REV}-" --allow-backwards
+    success "main → ${RELEASE_REV}-"
+  else
+    warn "main does not point at ${RELEASE_REV} — leaving the bookmark where it is"
+  fi
+
+  # The tags are gone by now, so the release commit takes an edit again.
+  jj restore --from "${RELEASE_REV}-" --to "${RELEASE_REV}" -- "${RELEASE_PREPARE_PATHS[@]}"
+  jj describe -r "${RELEASE_REV}" -m ""
+  success "Restored release files and cleared the description of ${RELEASE_REV}"
+  if [[ "${RELEASE_REV}" == "@-" ]]; then
+    info "An empty commit is left at @- — run \`jj abandon @-\` to drop it"
+  fi
+else
+  git restore -- "${RELEASE_PREPARE_PATHS[@]}"
+  success "Restored release files"
+fi
+
+echo ""
+echo -e "  ${green}${bold}✓ Local release preparation rolled back.${reset}"
+echo ""

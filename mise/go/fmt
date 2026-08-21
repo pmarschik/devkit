@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Format all files across workspace modules"
+#MISE alias="f"
+#MISE sources=["**/*.go", ".config/golangci.yml", "go.work"]
+set -euo pipefail
+# shellcheck source=_lib.sh
+source "$(dirname "$0")/_lib.sh"
+
+root=$(pwd)
+failed=0
+while IFS= read -r mod; do
+  echo "==> $mod"
+  if ! (cd "$root/$mod" && golangci-lint run --fix -c "$root/.config/golangci.yml"); then
+    echo "FAIL fmt: $mod"
+    failed=1
+  fi
+  # golangci-lint --fix may create empty .go stubs as side effects; remove them
+  find "$root/$mod" -maxdepth 2 -name "*.go" -empty -delete
+done < <(workspace_module_dirs)
+
+dprint fmt -c .config/dprint.json
+exit $failed
