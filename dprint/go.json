@@ -1,0 +1,23 @@
+{
+  // Shared dprint base for a Go workspace repo. A consumer's
+  // .config/dprint.json extends this file:
+  //
+  //   { "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v2/dprint/go.json" }
+  //
+  // "plugins" and "excludes" merge with whatever the consumer adds, so a repo
+  // lists only its own extra excludes. "includes" is the exception: dprint
+  // rejects it in an extended file, so every consumer carries its own copy of
+  //
+  //   "includes": ["**/*.{json,yaml,yml,toml,md}"]
+  //
+  // The plugin versions are pinned. `mise run upgrade` in devkit moves them.
+  "excludes": [
+    "vendor/**"
+  ],
+  "plugins": [
+    "npm:@dprint/json@0.23.0",
+    "npm:@dprint/markdown@0.22.1",
+    "npm:@dprint/toml@0.8.0",
+    "npm:dprint-plugin-yaml@0.6.0"
+  ]
+}

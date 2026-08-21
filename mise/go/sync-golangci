@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#MISE description="Copy the shared golangci-lint config from devkit into .config/golangci.yml"
+#USAGE flag "-n --diff-only" help="Show what would change and exit non-zero if it differs"
+set -euo pipefail
+
+# golangci-lint has no remote-extends mechanism, so this is the one shared
+# asset that has to be copied rather than referenced. The task lives inside the
+# devkit clone that mise cached for the include, so the source file sits at a
+# fixed path next to it, already at the ref the consumer pinned.
+SOURCE="$(cd "$(dirname "$0")/../.." && pwd)/golangci/go-workspace.yml"
+TARGET=".config/golangci.yml"
+
+[[ -f "${SOURCE}" ]] || { echo "shared config not found at ${SOURCE}" >&2; exit 1; }
+
+if [[ "${usage_diff_only:-false}" == "true" ]]; then
+  if diff -u "${TARGET}" "${SOURCE}"; then
+    echo "${TARGET} is up to date"
+    exit 0
+  fi
+  exit 1
+fi
+
+cp "${SOURCE}" "${TARGET}"
+echo "${TARGET} synced from devkit"
