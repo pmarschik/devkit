@@ -12,13 +12,23 @@ of asset, and each consumer pulls it with the mechanism its own tool provides.
 | `hk/`                | Git-hook config             | `amends` in `.config/hk.pkl`            |
 | `golangci`           | Linter config               | `mise run sync-golangci` copies it      |
 | `.github/workflows/` | Reusable CI and release     | `uses:` in a caller workflow            |
-| `github/`            | The caller workflows        | Copied into `.github/workflows/`        |
+| `github/go/`         | The caller workflows        | Copied into `.github/workflows/`        |
+| `docs/go/`           | Release runbook             | Copied into a consumer's `docs/`        |
 
-Everything except two files is referenced, so a consumer holds a one-line file
-and the content stays here. golangci-lint has no remote-extends mechanism, so
-that config is copied, and `sync-golangci` is how it gets copied. A GitHub
-Actions caller workflow cannot live in another repo either, so `github/` holds
-two stubs to copy once.
+The tasks, the two configs and the reusable workflows are referenced, so a
+consumer holds a one-line file and the content stays here. Three assets are
+copied instead. golangci-lint has no remote-extends mechanism, and
+`sync-golangci` is how that config gets copied. A GitHub Actions caller workflow
+cannot live in another repo, so `github/go/` holds two stubs to copy once. And a
+release runbook belongs in the repo it releases, so `docs/go/RELEASING.md` gets
+copied too, pointing back here for the reasoning.
+
+Every asset here is Go-only today, and the naming says where a second language
+would go. A referenced asset is named by its URL, so the language sits in the
+filename: `dprint/go.json`, `hk/go-workspace.pkl`,
+`.github/workflows/go-ci.yml`. A copied asset keeps the filename it lands under
+in the consumer, so the language sits in the directory instead: `github/go/`,
+`docs/go/`.
 
 ## mise task sets
 
@@ -181,6 +191,10 @@ release and you can amend it. `release:push` writes the tags, because a tag
 freezes its commit under jj and would slide the working copy onto an empty
 child mid-review.
 
+Copy `docs/go/RELEASING.md` into the consumer's own `docs/`. It is the command
+sequence and the recovery table, and it links back here for everything this
+section explains.
+
 ### What a consuming repo must provide
 
 - `go.work` — the module list. The workspace tasks walk all of it, and
@@ -226,12 +240,12 @@ hooks. A consumer amending it can override any hook or add steps.
 ## GitHub Actions
 
 `.github/workflows/` holds two reusable workflows. A consumer copies a caller
-out of `github/` and the work stays here:
+out of `github/go/` and the work stays here:
 
-| Reusable         | Caller               | Runs                                                   |
-| ---------------- | -------------------- | ------------------------------------------------------ |
-| `go-ci.yml`      | `github/ci.yml`      | `mise run ci`, plus optional race, coverage and vuln   |
-| `go-release.yml` | `github/release.yml` | GoReleaser on a root tag, for a repo shipping binaries |
+| Reusable         | Caller                  | Runs                                                   |
+| ---------------- | ----------------------- | ------------------------------------------------------ |
+| `go-ci.yml`      | `github/go/ci.yml`      | `mise run ci`, plus optional race, coverage and vuln   |
+| `go-release.yml` | `github/go/release.yml` | GoReleaser on a root tag, for a repo shipping binaries |
 
 `go-ci.yml` installs the repo's own tools with `jdx/mise-action` and then runs
 `mise run ci`, so CI and a local run execute the same tasks. Its inputs turn the

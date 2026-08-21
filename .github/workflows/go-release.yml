@@ -1,4 +1,4 @@
-# Reusable release for a Go repo that ships binaries. Copy github/release.yml
+# Reusable release for a Go repo that ships binaries. Copy github/go/release.yml
 # out of this repo as the caller.
 #
 # A library needs none of this. `mise run release:push` writes the tags and the

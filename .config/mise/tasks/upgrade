@@ -46,7 +46,7 @@ echo "==> GitHub Actions"
 # read the release notes. The `uses:` line that names devkit itself carries a
 # path, so the pattern below skips it.
 pins=$(grep -hoE 'uses: [A-Za-z0-9._-]+/[A-Za-z0-9._-]+@v[0-9]+' \
-  .github/workflows/*.yml github/*.yml | sed 's/^uses: //' | sort -u || true)
+  .github/workflows/*.yml github/go/*.yml | sed 's/^uses: //' | sort -u || true)
 
 action_drift=0
 while IFS= read -r pin; do
