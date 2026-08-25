@@ -7,7 +7,7 @@ set -euo pipefail
 # asset that has to be copied rather than referenced. The task lives inside the
 # devkit clone that mise cached for the include, so the source file sits at a
 # fixed path next to it, already at the ref the consumer pinned.
-SOURCE="$(cd "$(dirname "$0")/../.." && pwd)/golangci/go-workspace.yml"
+SOURCE="$(cd "$(dirname "$0")/../.." && pwd)/golangci/go.yml"
 TARGET=".config/golangci.yml"
 
 [[ -f "${SOURCE}" ]] || { echo "shared config not found at ${SOURCE}" >&2; exit 1; }

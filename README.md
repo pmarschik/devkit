@@ -5,15 +5,15 @@
 Shared development tooling for my repos. Each top-level directory holds one kind
 of asset, and each consumer pulls it with the mechanism its own tool provides.
 
-| Directory            | Holds                       | Consumed by                             |
-| -------------------- | --------------------------- | --------------------------------------- |
-| `mise/go`            | Workspace and release tasks | `[task_config] includes` in `mise.toml` |
-| `dprint/`            | Formatter base config       | `extends` in `.config/dprint.json`      |
-| `hk/`                | Git-hook config             | `amends` in `.config/hk.pkl`            |
-| `golangci`           | Linter config               | `mise run sync-golangci` copies it      |
-| `.github/workflows/` | Reusable CI and release     | `uses:` in a caller workflow            |
-| `github/go/`         | The caller workflows        | Copied into `.github/workflows/`        |
-| `docs/go/`           | Release runbook             | Copied into a consumer's `docs/`        |
+| Directory            | Holds                    | Consumed by                             |
+| -------------------- | ------------------------ | --------------------------------------- |
+| `mise/go`            | Module and release tasks | `[task_config] includes` in `mise.toml` |
+| `dprint/`            | Formatter base config    | `extends` in `.config/dprint.json`      |
+| `hk/`                | Git-hook config          | `amends` in `.config/hk.pkl`            |
+| `golangci`           | Linter config            | `mise run sync-golangci` copies it      |
+| `.github/workflows/` | Reusable CI and release  | `uses:` in a caller workflow            |
+| `github/go/`         | The caller workflows     | Copied into `.github/workflows/`        |
+| `docs/go/`           | Release runbook          | Copied into a consumer's `docs/`        |
 
 The tasks, the two configs and the reusable workflows are referenced, so a
 consumer holds a one-line file and the content stays here. Three assets are
@@ -25,8 +25,7 @@ copied too, pointing back here for the reasoning.
 
 Every asset here is Go-only today, and the naming says where a second language
 would go. A referenced asset is named by its URL, so the language sits in the
-filename: `dprint/go.json`, `hk/go-workspace.pkl`,
-`.github/workflows/go-ci.yml`. A copied asset keeps the filename it lands under
+filename: `dprint/go.json`, `hk/go.pkl`, `.github/workflows/go-ci.yml`. A copied asset keeps the filename it lands under
 in the consumer, so the language sits in the directory instead: `github/go/`,
 `docs/go/`.
 
@@ -134,10 +133,11 @@ change out, and delete the directory to make the change stick.
 
 ## mise/go
 
-### Workspace tasks
+### Module tasks
 
 Every task walks the module list in `go.work`, including `example/*`, so a new
-module joins as soon as the workspace lists it.
+module joins as soon as the workspace lists it. A repo without a `go.work` is a
+single module at the root, and every task treats it as a one-entry workspace.
 
 | Task            | What it does                                            |
 | --------------- | ------------------------------------------------------- |
@@ -151,7 +151,7 @@ module joins as soon as the workspace lists it.
 | `typos`         | Spell check                                             |
 | `setup`         | `go mod download` and `hk install`                      |
 | `build`         | `go build ./...`                                        |
-| `sync-golangci` | Copies `golangci/go-workspace.yml` to `.config/`        |
+| `sync-golangci` | Copies `golangci/go.yml` to `.config/`                  |
 
 `lint` and `test` forward extra arguments, and both take `--no-cache`.
 `sync-golangci --diff-only` reports drift without writing.
@@ -162,7 +162,8 @@ golangci-lint runs in parallel collide on its lock.
 ### Release tasks
 
 One commit carries the root tag `vX.Y.Z` and a `<subdir>/vX.Y.Z` tag for every
-other module in `go.work`.
+other module in `go.work`. In a single-module repo the root tag is the only one,
+and there is no `go.work.sum` to sync.
 
 | Task                | What it does                                                         |
 | ------------------- | -------------------------------------------------------------------- |
@@ -197,9 +198,10 @@ section explains.
 
 ### What a consuming repo must provide
 
-- `go.work` — the module list. The workspace tasks walk all of it, and
-  `discover_modules` in the release tasks skips directories matching its
-  exclude glob, `example/*` by default.
+- `go.work`, for a multi-module repo only — the module list. The tasks walk all
+  of it, and `discover_modules` in the release tasks skips directories matching
+  its exclude glob, `example/*` by default. A single-module repo needs no such
+  file, and its root module is the whole list.
 - `.config/dprint.json` extending `dprint/go.json` from here.
 - `.config/golangci.yml`, which `sync-golangci` writes.
 - `.config/cliff.toml` with `tag_pattern = "^v[0-9]"`. Without it a submodule
@@ -228,14 +230,25 @@ extended file, so every consumer repeats the line above.
 
 ## hk
 
-`.config/hk.pkl` in a consumer:
+`.config/hk.pkl` in a consumer is one line, and which line depends on whether
+the repo has a `go.work`:
 
 ```pkl
+amends "https://raw.githubusercontent.com/pmarschik/devkit/v1/hk/go.pkl"
 amends "https://raw.githubusercontent.com/pmarschik/devkit/v1/hk/go-workspace.pkl"
 ```
 
-The file defines the `pre-commit`, `pre-push`, `fmt`, `lint`, `fix` and `check`
-hooks. A consumer amending it can override any hook or add steps.
+`go.pkl` defines the `pre-commit`, `pre-push`, `fmt`, `lint`, `fix` and `check`
+hooks. A consumer amending either file can override any hook or add steps.
+
+`go-workspace.pkl` amends `go.pkl` and adds one setting:
+`workspace_indicator = "go.work"` on the golangci-lint step. That makes hk run
+the linter once from the repo root rather than once per module in parallel,
+which collides on the golangci-lint lock. Naming the indicator in a repo that
+has no `go.work` is worse than leaving it out, because **hk skips a step whose
+indicator file is missing, in silence and with a clean exit** — the repo would
+lose its lint step and never be told. Pick the line that matches the repo, and
+switch it the day the repo gains a `go.work`.
 
 ## GitHub Actions
 
@@ -294,11 +307,11 @@ the notes `release:push` wrote with the whole `CHANGELOG.md`.
 
 ## Maintaining this repo
 
-| Task          | What it does                                             |
-| ------------- | -------------------------------------------------------- |
-| `check`       | shellcheck over everything under `mise/`                 |
-| `upgrade`     | Bumps dprint plugins and hk, reports action-major drift  |
-| `validate-hk` | Evaluates `hk/go-workspace.pkl` the way a consumer would |
+| Task          | What it does                                            |
+| ------------- | ------------------------------------------------------- |
+| `check`       | shellcheck over everything under `mise/`                |
+| `upgrade`     | Bumps dprint plugins and hk, reports action-major drift |
+| `validate-hk` | Evaluates both `hk/*.pkl` the way a consumer would      |
 
 Every shared config pins the versions it names, so a consumer gets the same
 plugins whatever day it clones. `upgrade` is what moves those pins, and it runs

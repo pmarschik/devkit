@@ -1,0 +1,111 @@
+// Shared hk config for a Go repo. A consumer's .config/hk.pkl is one line:
+//
+//   amends "https://raw.githubusercontent.com/pmarschik/devkit/v1/hk/go.pkl"
+//
+// It can then override any hook or add its own steps. The step commands name
+// .config/dprint.json and .config/golangci.yml, which hk resolves from the
+// repo root at run time, so both files have to exist in the consumer.
+//
+// A multi-module repo amends hk/go-workspace.pkl instead, which is this file
+// plus one setting. See the comment on golangci_lint below.
+//
+// The hk version below is pinned. `mise run upgrade` in devkit moves it, and
+// `mise run validate-hk` proves the result still evaluates.
+amends "package://github.com/jdx/hk/releases/download/v1.56.0/hk@1.56.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.56.0/hk@1.56.0#/Builtins.pkl"
+
+// dprint and golangci-lint both keep their config outside the default lookup
+// path, so each builtin's command is restated here with a -c flag. The commands
+// are copies of the builtin ones rather than string rewrites of them: since hk
+// 1.56 a command is a CommandSpec holding an argv list, and there is no string
+// left to patch. Their effects mirror the builtins so hk still knows which
+// steps write.
+local dprintFlags = List("--allow-no-files", "-c", ".config/dprint.json", "{{files}}")
+
+local dprint: Step = (Builtins.dprint) {
+    check = new CommandSpec {
+        command = new Command { argv = List("dprint", "check") + dprintFlags }
+        effect = "read"
+    }
+    check_list_files = new CommandSpec {
+        command = new Command { argv = List("dprint", "check", "--list-different") + dprintFlags }
+        effect = "read"
+    }
+    fix = new CommandSpec {
+        command = new Command { argv = List("dprint", "fmt") + dprintFlags }
+        effect = "write"
+    }
+}
+
+// One golangci-lint run over ./... from the repo root, with no
+// workspace_indicator. Two runs in parallel collide on the golangci-lint lock,
+// and an indicator is how hk is told to run a step once rather than once per
+// module.
+//
+// A single-module repo has one workspace already, so no indicator is needed and
+// naming one would be actively wrong: hk skips a step whose indicator file the
+// repo does not have, in silence and with a clean exit. That is why this file
+// carries none and hk/go-workspace.pkl adds "go.work" on top.
+local golangci_lint: Step = (Builtins.golangci_lint) {
+    check = new CommandSpec {
+        command = "cd {{workspace}} && golangci-lint run --fix=false -c .config/golangci.yml ./..."
+        effect = "write"
+    }
+    fix = new CommandSpec {
+        command = "cd {{workspace}} && golangci-lint run --fix -c .config/golangci.yml ./..."
+        effect = "write"
+    }
+}
+
+local formatters = new Mapping<String, Step> {
+    ["go_fumpt"] = Builtins.go_fumpt
+    ["dprint"] = dprint
+}
+
+local all_steps = new Mapping<String, Step> {
+    ["go_fumpt"]      = Builtins.go_fumpt
+    ["dprint"]        = dprint
+    ["golangci_lint"] = golangci_lint
+    ["typos"]         = Builtins.typos
+    ["go_vet"]        = Builtins.go_vet
+    ["gomod_tidy"]    = Builtins.gomod_tidy
+}
+
+local fix_steps = new Mapping<String, Step> {
+    ["go_fumpt"]      = Builtins.go_fumpt
+    ["dprint"]        = dprint
+    ["golangci_lint"] = golangci_lint
+    ["typos"]         = Builtins.typos
+}
+
+local lint_steps = new Mapping<String, Step> {
+    ["golangci_lint"] = golangci_lint
+    ["typos"]         = Builtins.typos
+    ["go_vet"]        = Builtins.go_vet
+    ["gomod_tidy"]    = Builtins.gomod_tidy
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = all_steps
+    }
+    ["pre-push"] {
+        steps = all_steps
+    }
+    ["fmt"] {
+        fix = true
+        steps = formatters
+    }
+    ["lint"] {
+        steps = lint_steps
+    }
+    ["fix"] {
+        fix = true
+        steps = fix_steps
+    }
+    ["check"] {
+        steps = all_steps
+    }
+}

@@ -3,14 +3,17 @@
 # execute it directly. Tasks at the include root reach it as
 # "$(dirname "$0")/_lib.sh" and tasks in release/ as "$(dirname "$0")/../_lib.sh".
 #
-# The release/* tasks release a Go workspace repo: one commit carries the root
-# tag vX.Y.Z and a <subdir>/vX.Y.Z tag for every other module in go.work. A
-# module reaches its users through the Go module proxy, so the release is
-# finished when the tags are on GitHub and the proxy serves them. GoReleaser,
-# if the repo runs it, only adds binaries on top of that.
+# The release/* tasks release a Go repo: one commit carries the root tag vX.Y.Z
+# and a <subdir>/vX.Y.Z tag for every other module in go.work. A module reaches
+# its users through the Go module proxy, so the release is finished when the
+# tags are on GitHub and the proxy serves them. GoReleaser, if the repo runs
+# it, only adds binaries on top of that.
+#
+# go.work is optional. A repo without one is a single module at the root, and
+# every task treats it as a one-entry workspace, so the root tag is the only
+# tag and there is no go.work.sum to sync.
 #
 # What the consuming repo must provide:
-#   go.work                 the module list (discover_modules reads it)
 #   .config/dprint.json     extending devkit's dprint/go.json
 #   .config/golangci.yml    the linter config fmt and lint pass with -c
 #   .config/cliff.toml      with tag_pattern = "^v[0-9]" so a submodule tag
@@ -234,9 +237,13 @@ wait_for_proxy() {
 # inside the workspace they resolve locally and never get one. Needs
 # discover_modules to have run.
 tidy_go_sums() {
-  info "Syncing go.work.sum…"
-  GONOSUMDB="${ROOT_MODULE}" go work sync
-  success "go.work.sum synced"
+  # Nothing to sync without a workspace: a single module's go.sum is the whole
+  # story, and `go work sync` fails outright when there is no go.work.
+  if [[ -f go.work ]]; then
+    info "Syncing go.work.sum…"
+    GONOSUMDB="${ROOT_MODULE}" go work sync
+    success "go.work.sum synced"
+  fi
 
   info "Tidying go.sum files…"
   for dir in "${MODULE_DIRS[@]}"; do
@@ -250,11 +257,20 @@ tidy_go_sums() {
 # Echo every module directory in go.work, one per line, as it is written there
 # ("." for the root, "./sub/dir" for the rest).
 #
+# A repo without a go.work is a single module at the root, and every task here
+# treats it as a one-entry workspace rather than refusing to run. Plenty of
+# repos never grow a second module, and they still want the same fmt, lint,
+# test and release tasks.
+#
 # No exclusions, unlike discover_modules: fmt, lint, test and tidy cover the
 # example modules too, and dropping them here would quietly stop linting and
 # testing code that a reader expects to be covered.
 workspace_module_dirs() {
-  go work edit -json | sed -n 's/.*"DiskPath": *"\(.*\)".*/\1/p'
+  if [[ -f go.work ]]; then
+    go work edit -json | sed -n 's/.*"DiskPath": *"\(.*\)".*/\1/p'
+  else
+    echo "."
+  fi
 }
 
 # Populate MONOREPO_MODULES (module paths) and MODULE_DIRS (relative dirs) from go.work.
@@ -280,5 +296,5 @@ discover_modules() {
 
     MONOREPO_MODULES+=("$mod")
     MODULE_DIRS+=("$dir")
-  done < <(go work edit -json | grep '"DiskPath"' | sed 's/.*"DiskPath": *"\(.*\)".*/\1/')
+  done < <(workspace_module_dirs)
 }

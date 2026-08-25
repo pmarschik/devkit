@@ -14,7 +14,7 @@ dprint config update -y -c dprint/go.json
 
 echo ""
 echo "==> hk"
-current=$(sed -n 's|.*/releases/download/v\([0-9][0-9.]*\)/hk@.*|\1|p' hk/go-workspace.pkl | head -1)
+current=$(sed -n 's|.*/releases/download/v\([0-9][0-9.]*\)/hk@.*|\1|p' hk/go.pkl | head -1)
 latest=$(gh api repos/jdx/hk/releases/latest -q .tag_name)
 latest="${latest#v}"
 
@@ -27,8 +27,8 @@ else
   url="https://github.com/jdx/hk/releases/download/v${latest}/hk@${latest}"
   curl -fsIL -o /dev/null "${url}" || { echo "no such release asset: ${url}" >&2; exit 1; }
 
-  sed -i.bak -E "s|/releases/download/v[0-9.]+/hk@[0-9.]+#|/releases/download/v${latest}/hk@${latest}#|g" hk/go-workspace.pkl
-  rm -f hk/go-workspace.pkl.bak
+  sed -i.bak -E "s|/releases/download/v[0-9.]+/hk@[0-9.]+#|/releases/download/v${latest}/hk@${latest}#|g" hk/go.pkl
+  rm -f hk/go.pkl.bak
   echo "hk ${current} -> ${latest}"
 
   # A new hk can rename or retype a Builtins member, and the pkl reaches into

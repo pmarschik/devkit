@@ -6,15 +6,19 @@ set -euo pipefail
 # between minors. A consumer only finds out when a hook runs, so evaluate the
 # file here: a throwaway directory holding nothing but the one-line hk.pkl a
 # consumer writes, which makes this the consumer's exact code path.
-SHARED="$(pwd)/hk/go-workspace.pkl"
-[[ -f "${SHARED}" ]] || { echo "run this from the devkit root" >&2; exit 1; }
+#
+# Both entry points get evaluated. go-workspace.pkl amends go.pkl and reaches
+# into the step names it defines, so a rename in one silently breaks the other.
+[[ -f hk/go.pkl ]] || { echo "run this from the devkit root" >&2; exit 1; }
 
 DIR=$(mktemp -d)
 trap 'rm -rf "${DIR}"' EXIT
 mkdir -p "${DIR}/.config"
-printf 'amends "%s"\n' "${SHARED}" > "${DIR}/.config/hk.pkl"
 
-# --cd rather than a subshell cd: hk reads the config relative to that directory
-# and nothing here depends on the caller's working directory afterwards.
-hk --cd "${DIR}" validate
-echo "hk config evaluates"
+for shared in hk/go.pkl hk/go-workspace.pkl; do
+  printf 'amends "%s"\n' "$(pwd)/${shared}" > "${DIR}/.config/hk.pkl"
+  # --cd rather than a subshell cd: hk reads the config relative to that
+  # directory and nothing here depends on the caller's working directory.
+  hk --cd "${DIR}" validate
+  echo "${shared} evaluates"
+done
