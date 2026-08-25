@@ -238,8 +238,9 @@ wait_for_proxy() {
 # discover_modules to have run.
 tidy_go_sums() {
   # Nothing to sync without a workspace: a single module's go.sum is the whole
-  # story, and `go work sync` fails outright when there is no go.work.
-  if [[ -f go.work ]]; then
+  # story, and `go work sync` fails outright when there is no go.work — or when
+  # GOWORK=off hides the one that is there.
+  if workspace_enabled; then
     info "Syncing go.work.sum…"
     GONOSUMDB="${ROOT_MODULE}" go work sync
     success "go.work.sum synced"
@@ -254,6 +255,16 @@ tidy_go_sums() {
   success "go.sum files updated"
 }
 
+# True when the go commands these tasks run will read a workspace.
+#
+# GOWORK=off turns the workspace off for every one of them, so the module list
+# has to follow. A repo sets it to keep a local go.work for the editor while the
+# tasks stay on one module — without this the tasks walk into the sibling
+# checkouts that workspace names and test somebody else's code.
+workspace_enabled() {
+  [[ "$(go env GOWORK)" != "off" && -f go.work ]]
+}
+
 # Echo every module directory in go.work, one per line, as it is written there
 # ("." for the root, "./sub/dir" for the rest).
 #
@@ -266,7 +277,7 @@ tidy_go_sums() {
 # example modules too, and dropping them here would quietly stop linting and
 # testing code that a reader expects to be covered.
 workspace_module_dirs() {
-  if [[ -f go.work ]]; then
+  if workspace_enabled; then
     go work edit -json | sed -n 's/.*"DiskPath": *"\(.*\)".*/\1/p'
   else
     echo "."
