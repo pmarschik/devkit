@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-#MISE description="Lint every shared shell task"
+#MISE description="Lint every shell task, shared and local"
 set -euo pipefail
 
-# shellcheck resolves a `# shellcheck source=` path relative to the working
-# directory, so each file is checked from its own directory. The include nests
-# tasks in subdirectories, so the file list has to come from find rather than a
-# glob. Every tracked file under mise/ is a shell script.
+# A `source=` directive resolves relative to the working directory, so each file
+# is checked from its own directory. Both trees nest tasks in subdirectories, so
+# the file list has to come from find rather than a glob. Every tracked file
+# under mise/ and .config/mise/tasks/ is a shell script.
 #
 # Dotfiles are skipped because macOS drops a .DS_Store into any directory the
-# Finder opens, and shellcheck reads that binary as a script full of carriage
-# returns. .gitignore keeps it out of the repo; this keeps it out of the gate.
-find mise -type f -not -name '.*' -print | sort | while read -r file; do
+# Finder opens, and the linter reads that binary as a script full of carriage
+# returns. .gitignore keeps it out of the repo, and this keeps it out of the gate.
+find mise .config/mise/tasks -type f -not -name '.*' -print | sort | while read -r file; do
   (cd "$(dirname "$file")" && shellcheck -x "$(basename "$file")")
 done
 
