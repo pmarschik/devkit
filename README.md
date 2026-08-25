@@ -41,7 +41,7 @@ That is why the release tasks sit one level deeper than the include points:
 
 ```
 mise/go/                  <- the include path
-├── _lib.sh               <- leading underscore, so not a task
+├── _lib.sh               <- not executable, so not a task
 ├── fmt                   <- bare task names
 ├── ci
 ├── lint
@@ -64,10 +64,16 @@ mise/go/                  <- the include path
 Flatten `release/` and you get a top-level task called `push`, which is both
 wrong and dangerous.
 
-`_default` is the one underscore mise does read. A file by that name becomes the
-directory's own task, so `check/_default` answers to `check` and its siblings
-get the `check:` prefix. A file called `default` does not — that one becomes
-`check:default`.
+**The executable bit is what makes a file a task, not its name.** mise skips a
+file with no `+x` and registers every file that has one, at any depth. A shared
+helper like `_lib.sh` stays `0644` and the leading underscore is a convention
+for the reader. Make it `0755` and it turns into a task — a helper under
+`release/` surfaces as `release:_lib`, which is how you find out.
+
+The underscore does carry meaning in one name. A file called `_default` becomes
+its directory's own task, so `check/_default` answers to `check` and its
+siblings get the `check:` prefix. A file called `default` does not — that one
+becomes `check:default`.
 
 Wire it into `.config/mise/config.toml`:
 
