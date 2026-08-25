@@ -265,23 +265,36 @@ workspace_enabled() {
   [[ "$(go env GOWORK)" != "off" && -f go.work ]]
 }
 
-# Echo every module directory in go.work, one per line, as it is written there
-# ("." for the root, "./sub/dir" for the rest).
+# Echo every module directory in go.work that this repo owns, one per line, as
+# it is written there ("." for the root, "./sub/dir" for the rest).
 #
 # A repo without a go.work is a single module at the root, and every task here
 # treats it as a one-entry workspace rather than refusing to run. Plenty of
 # repos never grow a second module, and they still want the same fmt, lint,
 # test and release tasks.
 #
-# No exclusions, unlike discover_modules: fmt, lint, test and tidy cover the
-# example modules too, and dropping them here would quietly stop linting and
+# A `use` line pointing outside the repo is dropped. That is the local-override
+# workspace — a gitignored go.work naming a sibling checkout so the build reads
+# the dependency being changed rather than the pinned release. The go commands
+# have to see it, which is why GOWORK stays on, but the module list must not:
+# fmt, lint and tidy write files, so following that line would reformat, relint
+# and re-tidy somebody else's repo under this repo's config.
+#
+# No other exclusions, unlike discover_modules: fmt, lint, test and tidy cover
+# the example modules too, and dropping them here would quietly stop linting and
 # testing code that a reader expects to be covered.
 workspace_module_dirs() {
-  if workspace_enabled; then
-    go work edit -json | sed -n 's/.*"DiskPath": *"\(.*\)".*/\1/p'
-  else
+  if ! workspace_enabled; then
     echo "."
+    return 0
   fi
+  local root dir abs
+  root=$(pwd -P)
+  while IFS= read -r dir; do
+    abs=$(cd "$dir" 2>/dev/null && pwd -P) || continue
+    [[ "$abs" == "$root" || "$abs" == "$root"/* ]] || continue
+    echo "$dir"
+  done < <(go work edit -json | sed -n 's/.*"DiskPath": *"\(.*\)".*/\1/p')
 }
 
 # Populate MONOREPO_MODULES (module paths) and MODULE_DIRS (relative dirs) from go.work.

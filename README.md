@@ -146,6 +146,13 @@ Every task walks the module list in `go.work`, including `example/*`, so a new
 module joins as soon as the workspace lists it. A repo without a `go.work` is a
 single module at the root, and every task treats it as a one-entry workspace.
 
+A `use` line pointing outside the repo is skipped. That is the local-override
+workspace — a gitignored `go.work` naming a sibling checkout, so the build reads
+the dependency you are changing rather than the pinned release. The go commands
+still see it, because `GOWORK` stays on. The module list does not, because
+`fmt`, `lint` and `tidy` write files and would reformat somebody else's repo
+under this repo's config.
+
 | Task            | What it does                                             |
 | --------------- | -------------------------------------------------------- |
 | `check`         | `fmt`, `typos`, `test`, then `lint`                      |
@@ -228,10 +235,10 @@ section explains.
 
 ### What a consuming repo must provide
 
-- `go.work`, for a multi-module repo only — the module list. The tasks walk all
-  of it, and `discover_modules` in the release tasks skips directories matching
-  its exclude glob, `example/*` by default. A single-module repo needs no such
-  file, and its root module is the whole list.
+- `go.work`, for a multi-module repo only — the module list. The tasks walk the
+  part of it that lives in the repo, and `discover_modules` in the release tasks
+  skips directories matching its exclude glob, `example/*` by default. A
+  single-module repo needs no such file, and its root module is the whole list.
 - `.config/dprint.json` extending `dprint/go.json` from here.
 - `.config/golangci.yml`, which `sync-golangci` writes, plus
   `.config/golangci.overrides.yml` when the repo needs to diverge.
