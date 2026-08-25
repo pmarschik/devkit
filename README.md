@@ -74,7 +74,7 @@ Wire it into `.config/mise/config.toml`:
 ```toml
 [task_config]
 includes = [
-  "git::https://github.com/pmarschik/devkit.git//mise/go?ref=v2",
+  "git::https://github.com/pmarschik/devkit.git//mise/go?ref=v1",
   ".config/mise/tasks",
 ]
 ```
@@ -93,8 +93,8 @@ The URL form is strict. mise matches it against a regex that accepts `https://`
 and `ssh://` only, and the repository part must end in `.git`:
 
 ```
-git::https://github.com/pmarschik/devkit.git//mise/go?ref=v2
-git::ssh://git@github.com/pmarschik/devkit.git//mise/go?ref=v2
+git::https://github.com/pmarschik/devkit.git//mise/go?ref=v1
+git::ssh://git@github.com/pmarschik/devkit.git//mise/go?ref=v1
 ```
 
 The scp form `git@github.com:pmarschik/devkit.git` does not match, and neither
@@ -103,22 +103,22 @@ the clone needs a key.
 
 ### Pinning
 
-Consumers pin `?ref=v2`. The `v2` tag moves forward on every
-backward-compatible change. A change that breaks a consumer becomes `v3`, and
+Consumers pin `?ref=v1`. The `v1` tag moves forward on every
+backward-compatible change. A change that breaks a consumer becomes `v2`, and
 repos move to it one at a time. The `dprint` and `hk` URLs carry the same major,
 so one tag moves every asset together.
 
 Move the tag after the change lands:
 
 ```bash
-jj tag set v2 -r @- --allow-move
-jj git push --tag v2
+jj tag set v1 -r @- --allow-move
+jj git push --tag v1
 ```
 
 **A moved tag does not reach a consumer on its own.** mise clones the include
 once, into `$(mise cache path)/remote-git-tasks-cache/<hash of the URL>`, and
 pins that clone to the commit the ref named at the time. It never notices that
-`v2` now points somewhere else, so the repo keeps running the old task with a
+`v1` now points somewhere else, so the repo keeps running the old task with a
 clean exit and no warning.
 
 Clear the entry in each consumer after you move the tag:
@@ -217,7 +217,7 @@ section explains.
 
 ```json
 {
-  "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v2/dprint/go.json",
+  "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v1/dprint/go.json",
   "includes": ["**/*.{json,yaml,yml,toml,md}"]
 }
 ```
@@ -231,7 +231,7 @@ extended file, so every consumer repeats the line above.
 `.config/hk.pkl` in a consumer:
 
 ```pkl
-amends "https://raw.githubusercontent.com/pmarschik/devkit/v2/hk/go-workspace.pkl"
+amends "https://raw.githubusercontent.com/pmarschik/devkit/v1/hk/go-workspace.pkl"
 ```
 
 The file defines the `pre-commit`, `pre-push`, `fmt`, `lint`, `fix` and `check`
@@ -254,7 +254,7 @@ extra jobs on and off:
 ```yaml
 jobs:
   ci:
-    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v2
+    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v1
     with:
       race: true # default
       vuln: true # default
@@ -264,7 +264,7 @@ jobs:
 A library needs no release workflow. `release:push` writes the tags and the
 GitHub release notes, and the module proxy does the publishing.
 
-Unlike a mise include, `uses:` resolves on every run, so a moved `v2` tag
+Unlike a mise include, `uses:` resolves on every run, so a moved `v1` tag
 reaches a caller immediately. Nothing to clear. The third-party actions inside
 the reusable workflows are pinned by major tag, and `upgrade` reports a new
 major rather than writing it.

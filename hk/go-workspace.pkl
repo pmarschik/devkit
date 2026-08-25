@@ -1,7 +1,7 @@
 // Shared hk config for a Go workspace repo. A consumer's .config/hk.pkl is one
 // line:
 //
-//   amends "https://raw.githubusercontent.com/pmarschik/devkit/v2/hk/go-workspace.pkl"
+//   amends "https://raw.githubusercontent.com/pmarschik/devkit/v1/hk/go-workspace.pkl"
 //
 // It can then override any hook or add its own steps. The step commands name
 // .config/dprint.json and .config/golangci.yml, which hk resolves from the

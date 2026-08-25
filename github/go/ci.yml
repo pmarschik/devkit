@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   ci:
-    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v2
+    uses: pmarschik/devkit/.github/workflows/go-ci.yml@v1
     # with:
     #   race: false
     #   vuln: false

@@ -2,7 +2,7 @@
   // Shared dprint base for a Go workspace repo. A consumer's
   // .config/dprint.json extends this file:
   //
-  //   { "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v2/dprint/go.json" }
+  //   { "extends": "https://raw.githubusercontent.com/pmarschik/devkit/v1/dprint/go.json" }
   //
   // "plugins" and "excludes" merge with whatever the consumer adds, so a repo
   // lists only its own extra excludes. "includes" is the exception: dprint

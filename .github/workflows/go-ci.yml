@@ -1,6 +1,6 @@
 # Reusable CI for a Go repo. A consumer calls it from a five-line caller
 # workflow — copy github/go/ci.yml out of this repo and commit it. GitHub Actions
-# resolves `uses:` on every run, so a moved v2 tag reaches a caller at once. The
+# resolves `uses:` on every run, so a moved v1 tag reaches a caller at once. The
 # mise include cache problem does not apply here.
 #
 # Every job installs the repo's own tools with mise and then runs a devkit task,
