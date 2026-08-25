@@ -5,8 +5,12 @@ set -euo pipefail
 # shellcheck resolves a `# shellcheck source=` path relative to the working
 # directory, so each file is checked from its own directory. The include nests
 # tasks in subdirectories, so the file list has to come from find rather than a
-# glob. Everything under mise/ is a shell script.
-find mise -type f -print | sort | while read -r file; do
+# glob. Every tracked file under mise/ is a shell script.
+#
+# Dotfiles are skipped because macOS drops a .DS_Store into any directory the
+# Finder opens, and shellcheck reads that binary as a script full of carriage
+# returns. .gitignore keeps it out of the repo; this keeps it out of the gate.
+find mise -type f -not -name '.*' -print | sort | while read -r file; do
   (cd "$(dirname "$file")" && shellcheck -x "$(basename "$file")")
 done
 
