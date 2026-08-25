@@ -10,18 +10,19 @@ of asset, and each consumer pulls it with the mechanism its own tool provides.
 | `mise/go`            | Module and release tasks | `[task_config] includes` in `mise.toml` |
 | `dprint/`            | Formatter base config    | `extends` in `.config/dprint.json`      |
 | `hk/`                | Git-hook config          | `amends` in `.config/hk.pkl`            |
-| `golangci`           | Linter config            | `mise run sync-golangci` copies it      |
+| `golangci`           | Linter config            | `mise run sync-golangci` composes it    |
 | `.github/workflows/` | Reusable CI and release  | `uses:` in a caller workflow            |
 | `github/go/`         | The caller workflows     | Copied into `.github/workflows/`        |
 | `docs/go/`           | Release runbook          | Copied into a consumer's `docs/`        |
 
 The tasks, the two configs and the reusable workflows are referenced, so a
 consumer holds a one-line file and the content stays here. Three assets are
-copied instead. golangci-lint has no remote-extends mechanism, and
-`sync-golangci` is how that config gets copied. A GitHub Actions caller workflow
-cannot live in another repo, so `github/go/` holds two stubs to copy once. And a
-release runbook belongs in the repo it releases, so `docs/go/RELEASING.md` gets
-copied too, pointing back here for the reasoning.
+generated or copied instead. golangci-lint has no config inheritance — neither
+`extends` nor `include` is in its schema — so `sync-golangci` composes that one.
+A GitHub Actions caller workflow cannot live in another repo, so `github/go/`
+holds two stubs to copy once. And a release runbook belongs in the repo it
+releases, so `docs/go/RELEASING.md` gets copied too, pointing back here for the
+reasoning.
 
 Every asset here is Go-only today, and the naming says where a second language
 would go. A referenced asset is named by its URL, so the language sits in the
@@ -139,22 +140,45 @@ Every task walks the module list in `go.work`, including `example/*`, so a new
 module joins as soon as the workspace lists it. A repo without a `go.work` is a
 single module at the root, and every task treats it as a one-entry workspace.
 
-| Task            | What it does                                            |
-| --------------- | ------------------------------------------------------- |
-| `check`         | `fmt`, `typos`, `test`, then `lint`                     |
-| `check:changed` | `hk check`, so only the changed files                   |
-| `ci`            | `typos`, `test`, then `lint` — the same gates, no `fmt` |
-| `fmt`           | `golangci-lint run --fix` per module, then `dprint fmt` |
-| `lint`          | `golangci-lint run` per module, then `dprint check`     |
-| `test`          | `go test ./...` per module                              |
-| `tidy`          | `go mod tidy` in every module, in parallel              |
-| `typos`         | Spell check                                             |
-| `setup`         | `go mod download` and `hk install`                      |
-| `build`         | `go build ./...`                                        |
-| `sync-golangci` | Copies `golangci/go.yml` to `.config/`                  |
+| Task            | What it does                                             |
+| --------------- | -------------------------------------------------------- |
+| `check`         | `fmt`, `typos`, `test`, then `lint`                      |
+| `check:changed` | `hk check`, so only the changed files                    |
+| `ci`            | `typos`, `test`, then `lint` — the same gates, no `fmt`  |
+| `fmt`           | `golangci-lint run --fix` per module, then `dprint fmt`  |
+| `lint`          | `golangci-lint run` per module, then `dprint check`      |
+| `test`          | `go test ./...` per module                               |
+| `tidy`          | `go mod tidy` in every module, in parallel               |
+| `typos`         | Spell check                                              |
+| `setup`         | `go mod download` and `hk install`                       |
+| `build`         | `go build ./...`                                         |
+| `sync-golangci` | Composes `.config/golangci.yml` from here plus overrides |
 
 `lint` and `test` forward extra arguments, and both take `--no-cache`.
 `sync-golangci --diff-only` reports drift without writing.
+
+### The linter config
+
+golangci-lint reads one file and inherits from nothing, so `.config/golangci.yml`
+is generated and committed. `sync-golangci` writes it from `golangci/go.yml`
+here, deep-merged with the consumer's optional
+`.config/golangci.overrides.yml`. A repo with no overrides file gets the shared
+config verbatim under a generated-by header.
+
+A value in the overrides file wins, and an array is a value: writing `paths` or
+`tagalign.order` there replaces the shared list instead of extending it. Restate
+what you want to keep. `linters.enable` is the one exception, because adding a
+single linter is the common case — the generated list is the union of both
+files, minus everything under `linters.disable`. Drop a shared linter by naming
+it under `disable`, which also works for a linter that arrives through
+`default: standard` and is therefore in no `enable` list.
+
+The task verifies the composed file with `golangci-lint config verify` before
+writing it, so a bad override fails here rather than mid-lint. It resolves `yq`
+through `mise exec`, so no consumer needs it in `[tools]`.
+
+Hand edits to `.config/golangci.yml` are lost on the next sync. Run
+`sync-golangci --diff-only` in CI to catch a repo that drifted.
 
 `check` runs `lint` last rather than as a dependency, because two
 golangci-lint runs in parallel collide on its lock.
@@ -203,7 +227,8 @@ section explains.
   its exclude glob, `example/*` by default. A single-module repo needs no such
   file, and its root module is the whole list.
 - `.config/dprint.json` extending `dprint/go.json` from here.
-- `.config/golangci.yml`, which `sync-golangci` writes.
+- `.config/golangci.yml`, which `sync-golangci` writes, plus
+  `.config/golangci.overrides.yml` when the repo needs to diverge.
 - `.config/cliff.toml` with `tag_pattern = "^v[0-9]"`. Without it a submodule
   tag such as `parsers/toml/v0.5.0` wins the "latest tag" race and every
   `go.mod` gets pinned to that name. Both release tasks guard against the
