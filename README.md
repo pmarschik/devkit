@@ -286,10 +286,10 @@ switch it the day the repo gains a `go.work`.
 `.github/workflows/` holds two reusable workflows. A consumer copies a caller
 out of `github/go/` and the work stays here:
 
-| Reusable         | Caller                  | Runs                                                   |
-| ---------------- | ----------------------- | ------------------------------------------------------ |
-| `go-ci.yml`      | `github/go/ci.yml`      | `mise run ci`, plus optional race, coverage and vuln   |
-| `go-release.yml` | `github/go/release.yml` | GoReleaser on a root tag, for a repo shipping binaries |
+| Reusable         | Caller                  | Runs                                                                 |
+| ---------------- | ----------------------- | -------------------------------------------------------------------- |
+| `go-ci.yml`      | `github/go/ci.yml`      | `mise run ci`, plus optional race, coverage, vuln and snapshot build |
+| `go-release.yml` | `github/go/release.yml` | GoReleaser on a root tag, for a repo shipping binaries               |
 
 `go-ci.yml` installs the repo's own tools with `jdx/mise-action` and then runs
 `mise run ci`, so CI and a local run execute the same tasks. Its inputs turn the
@@ -303,7 +303,18 @@ jobs:
       race: true # default
       vuln: true # default
       coverage-floor: 75 # 0, the default, skips the job
+      snapshot-build: true # false, the default, skips the job
+      goreleaser-config: .config/goreleaser.yaml # default
 ```
+
+`snapshot-build` is for a repo that ships binaries. `mise run ci` builds for the
+runner and nothing else, so a Windows-only path or a Unix-only syscall compiles
+clean on every push and breaks on the release tag. The job runs `goreleaser
+build --snapshot`, which covers every target the release covers.
+
+Reach for it rather than a build matrix in the caller. A matrix is a second list
+of targets next to the goreleaser config, and two lists drift — the caller ends
+up building a target the release ignores, or missing one it ships.
 
 A library needs no release workflow. `release:push` writes the tags and the
 GitHub release notes, and the module proxy does the publishing.

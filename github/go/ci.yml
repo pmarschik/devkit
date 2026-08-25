@@ -23,3 +23,5 @@ jobs:
     #   race: false
     #   vuln: false
     #   coverage-floor: 75
+    #   snapshot-build: true # a repo that ships binaries
+    #   goreleaser-config: .config/goreleaser.yaml
