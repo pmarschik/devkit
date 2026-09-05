@@ -5,3 +5,15 @@
 set -euo pipefail
 # lint runs after fmt to avoid parallel golangci-lint lock conflicts
 mise run lint
+
+# Extension point. A consumer that needs a gate of its own defines a task named
+# `check-extra` in .config/mise/tasks/ and it runs here, last, after the shared
+# gates have passed. The alternative a repo reaches for otherwise is shadowing
+# `check` wholesale and restating this list, which forks silently the next time
+# a gate is added here.
+#
+# `mise tasks info` exits non-zero when the task does not exist, so a repo
+# without one pays a lookup and nothing else.
+if mise tasks info check-extra >/dev/null 2>&1; then
+  mise run check-extra
+fi

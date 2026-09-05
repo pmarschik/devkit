@@ -37,6 +37,34 @@ local dprint: Step = (Builtins.dprint) {
     }
 }
 
+// Go formatting goes through golangci-lint's own formatter pass, not the
+// standalone gofumpt the go_fumpt builtin runs. The two are different binaries
+// built against different Go releases, and the Go printer's composite-literal
+// alignment changed between them: measured on a generated map, standalone
+// gofumpt 0.9.2 and 0.11.0 both rewrite a file that the golangci-lint-embedded
+// gofumpt and the pinned toolchain's gofmt call clean. Committing through the
+// fixing hook then produced a file CI rejected. `golangci-lint fmt` is the one
+// gofumpt this setup already has to agree with, so there is nothing left to
+// disagree.
+//
+// It also gains a check command the builtin cannot have: gofumpt -l always
+// exits 0, while `golangci-lint fmt --diff` exits 1 on an unformatted file.
+//
+// `fmt` runs only what the config's `formatters:` block enables - here gofumpt
+// and goimports. It is not `run --fix`, which applies every enabled linter's
+// autofix.
+local go_format: Step = new Step {
+    glob = "**/*.go"
+    check = new CommandSpec {
+        command = new Command { argv = List("golangci-lint", "fmt", "--diff", "-c", ".config/golangci.yml", "{{files}}") }
+        effect = "read"
+    }
+    fix = new CommandSpec {
+        command = new Command { argv = List("golangci-lint", "fmt", "-c", ".config/golangci.yml", "{{files}}") }
+        effect = "write"
+    }
+}
+
 // One golangci-lint run over ./... from the repo root, with no
 // workspace_indicator. Two runs in parallel collide on the golangci-lint lock,
 // and an indicator is how hk is told to run a step once rather than once per
@@ -46,24 +74,33 @@ local dprint: Step = (Builtins.dprint) {
 // naming one would be actively wrong: hk skips a step whose indicator file the
 // repo does not have, in silence and with a clean exit. That is why this file
 // carries none and hk/go-workspace.pkl adds "go.work" on top.
+//
+// Both commands pass --fix=false, including the one hk runs in a fixing hook.
+// `run --fix` applies every enabled linter's autofix, not just the safe ones:
+// measured on a two-field struct, it reordered the fields and deleted the doc
+// comments sitting on them (govet/fieldalignment) and rewrote a call site
+// (perfsprint), then printed "0 issues." A commit hook must not do that
+// unasked. Go formatting is go_format's job above, and it is the part that can
+// be applied blind. A repo that does want the lint autofixes overrides this
+// step's fix command in its own .config/hk.pkl.
 local golangci_lint: Step = (Builtins.golangci_lint) {
     check = new CommandSpec {
         command = "cd {{workspace}} && golangci-lint run --fix=false -c .config/golangci.yml ./..."
-        effect = "write"
+        effect = "read"
     }
     fix = new CommandSpec {
-        command = "cd {{workspace}} && golangci-lint run --fix -c .config/golangci.yml ./..."
-        effect = "write"
+        command = "cd {{workspace}} && golangci-lint run --fix=false -c .config/golangci.yml ./..."
+        effect = "read"
     }
 }
 
 local formatters = new Mapping<String, Step> {
-    ["go_fumpt"] = Builtins.go_fumpt
-    ["dprint"] = dprint
+    ["go_format"] = go_format
+    ["dprint"]    = dprint
 }
 
 local all_steps = new Mapping<String, Step> {
-    ["go_fumpt"]      = Builtins.go_fumpt
+    ["go_format"]     = go_format
     ["dprint"]        = dprint
     ["golangci_lint"] = golangci_lint
     ["typos"]         = Builtins.typos
@@ -72,7 +109,7 @@ local all_steps = new Mapping<String, Step> {
 }
 
 local fix_steps = new Mapping<String, Step> {
-    ["go_fumpt"]      = Builtins.go_fumpt
+    ["go_format"]     = go_format
     ["dprint"]        = dprint
     ["golangci_lint"] = golangci_lint
     ["typos"]         = Builtins.typos

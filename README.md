@@ -155,10 +155,10 @@ under this repo's config.
 
 | Task            | What it does                                             |
 | --------------- | -------------------------------------------------------- |
-| `check`         | `fmt`, `typos`, `test`, then `lint`                      |
+| `check`         | `fmt`, `typos`, `test`, `lint`, then `check-extra`       |
 | `check:changed` | `hk check`, so only the changed files                    |
-| `ci`            | `typos`, `test`, then `lint` — the same gates, no `fmt`  |
-| `fmt`           | `golangci-lint run --fix` per module, then `dprint fmt`  |
+| `ci`            | `typos`, `test`, `lint`, `check-extra` — no `fmt`        |
+| `fmt`           | `golangci-lint fmt` per module, then `dprint fmt`        |
 | `lint`          | `golangci-lint run` per module, then `dprint check`      |
 | `test`          | `go test ./...` per module                               |
 | `tidy`          | `go mod tidy` in every module, in parallel               |
@@ -169,6 +169,36 @@ under this repo's config.
 
 `lint` and `test` forward extra arguments, and both take `--no-cache`.
 `sync-golangci --diff-only` reports drift without writing.
+
+#### Adding a gate of your own
+
+`check` and `ci` end by running a task named `check-extra`, if the repo defines
+one. Put it in `.config/mise/tasks/check-extra` and it runs last, after the
+shared gates pass. A repo without one pays a `mise tasks info` lookup and
+nothing else.
+
+This exists so a repo never has to shadow `check` wholesale and restate the
+shared list. A shadow forks in silence: add a gate here later and the shadowing
+repo simply stops running it.
+
+#### `fmt` formats, `lint` reports
+
+`fmt` runs `golangci-lint fmt`, which applies only what the config's
+`formatters:` block enables — gofumpt and goimports, both AST-preserving.
+
+It deliberately does not run `golangci-lint run --fix`. That applies every
+enabled linter's autofix. Measured on a two-field struct, it reordered the
+fields and deleted the doc comments that sat on them (govet/fieldalignment) and
+rewrote a call site (perfsprint), while reporting `0 issues.` A task called
+`fmt`, and a commit hook, must not do that unasked. `lint` still reports those
+findings; applying them stays a decision somebody makes.
+
+The hk steps follow the same split: `go_format` runs `golangci-lint fmt` rather
+than the standalone gofumpt the hk builtin uses, because the two are different
+binaries built against different Go releases and disagree about composite-literal
+alignment — which is how a commit hook could rewrite a generated file into a
+shape CI then rejected. A repo that does want the lint autofixes overrides the
+`golangci_lint` step's `fix` command in its own `.config/hk.pkl`.
 
 ### The linter config
 

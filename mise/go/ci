@@ -10,3 +10,8 @@ set -euo pipefail
 # lint runs here rather than in depends, so it never races another
 # golangci-lint over the same lock.
 mise run lint
+
+# Same extension point as `check`. See the comment there.
+if mise tasks info check-extra >/dev/null 2>&1; then
+  mise run check-extra
+fi

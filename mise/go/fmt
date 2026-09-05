@@ -10,11 +10,19 @@ root=$(pwd)
 failed=0
 while IFS= read -r mod; do
   echo "==> $mod"
-  if ! (cd "$root/$mod" && golangci-lint run --fix -c "$root/.config/golangci.yml"); then
+  # `golangci-lint fmt`, not `run --fix`. `fmt` runs only what the config's
+  # `formatters:` block enables - gofumpt and goimports, both AST-preserving.
+  # `run --fix` applies EVERY enabled linter's autofix, which on a plain struct
+  # reorders fields and drops the doc comments that sat on them (fieldalignment)
+  # and rewrites call sites (perfsprint), while printing "0 issues." Measured.
+  # A task named fmt must not do that unasked; `lint` still reports those
+  # findings, and fixing them stays a decision somebody makes.
+  if ! (cd "$root/$mod" && golangci-lint fmt -c "$root/.config/golangci.yml"); then
     echo "FAIL fmt: $mod"
     failed=1
   fi
-  # golangci-lint --fix may create empty .go stubs as side effects; remove them
+  # Kept from the --fix era: a formatter should not leave an empty .go behind,
+  # but an empty .go is never legitimate, so the sweep costs nothing.
   find "$root/$mod" -maxdepth 2 -name "*.go" -empty -delete
 done < <(workspace_module_dirs)
 
