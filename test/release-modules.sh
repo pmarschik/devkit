@@ -58,7 +58,7 @@ check_eq "prepare succeeds" 0 "${STATUS}"
 check_contains "says one tag" "Single module" "${OUT}"
 check_eq "go.mod untouched" "" "$(cd "$d" && jj diff -r @ --summary -- go.mod)"
 : > "${CALLS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"; [[ ${STATUS} -eq 0 ]] || printf "%s\n" "${OUT}" | tail -15
 check_eq "only the root tag" "v0.1.0 " "$(remote_tags)"
 check_eq "main pushed" "$(cd "$d" && jj log -r 'v0.1.0' --no-graph -T commit_id)" "$(git --git-dir="${REMOTE}" rev-parse main)"
@@ -101,7 +101,7 @@ check_contains "pins the require" "example.com/multi v0.1.0" "$(cat "$d/sub/go.m
 check_lacks "drops the replace" "replace" "$(cat "$d/sub/go.mod")"
 check_contains "pins go.work" "replace example.com/multi v0.1.0 => ." "$(cat "$d/go.work")"
 : > "${CALLS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"; [[ ${STATUS} -eq 0 ]] || printf "%s\n" "${OUT}" | tail -15
 check_eq "root and module tags" "sub/v0.1.0 v0.1.0 " "$(remote_tags)"
 check_eq "gh never called" 0 "$(calls_of gh)"
@@ -116,7 +116,7 @@ jj_change "$d" "feat: sub module"
 run_task "$d" prepare
 check_eq "prepare succeeds" 0 "${STATUS}"
 : > "${CALLS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"; [[ ${STATUS} -eq 0 ]] || printf "%s\n" "${OUT}" | tail -15
 check_eq "root and module tags" "sub/v0.1.0 v0.1.0 " "$(remote_tags)"
 check_contains "gh creates the release" "gh release create v0.1.0" "$(cat "${CALLS}")"
@@ -130,7 +130,7 @@ d="${TMP}/gh-single"; new_jj_repo "$d" example.com/ghsingle
 jj_change "$d" "feat: thing"
 run_task "$d" prepare
 : > "${CALLS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"; [[ ${STATUS} -eq 0 ]] || printf "%s\n" "${OUT}" | tail -15
 check_contains "gh creates the release" "gh release create v0.1.0" "$(cat "${CALLS}")"
 check_eq "no proxy wait for one module" 0 "$(calls_of 'go mod download')"
@@ -143,7 +143,7 @@ git_change "$d" "feat: thing"
 run_task "$d" prepare
 check_eq "prepare succeeds" 0 "${STATUS}"
 : > "${CALLS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"; [[ ${STATUS} -eq 0 ]] || printf "%s\n" "${OUT}" | tail -15
 check_eq "only the root tag" "v0.1.0 " "$(remote_tags)"
 check_eq "release commit pushed" "chore(release): v0.1.0" "$(git --git-dir="${REMOTE}" log -1 --format=%s main)"

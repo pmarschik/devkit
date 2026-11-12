@@ -35,7 +35,7 @@ jj_change "$d" "feat: first thing"
 run_task "$d" prepare usage_highlights="Big news"
 check_eq "prepare succeeds" 0 "${STATUS}"
 prepared=$(cd "$d" && jj log -r @ --no-graph -T commit_id)
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"
 check_eq "root tag is an object" "tag" "$(git --git-dir="${REMOTE}" cat-file -t v0.1.0)"
 check_eq "annotation is the newest section" "$(newest_section "$d/CHANGELOG.md")" "$(tag_message v0.1.0)"
@@ -74,7 +74,7 @@ prepared=$(cd "$d" && jj log -r @ --no-graph -T commit_id)
 run_task "$d" push usage_dry_run=true
 check_contains "dry run says it would sign" "Would sign the release commit" "${OUT}"
 check_eq "dry run signs nothing" "${prepared}" "$(cd "$d" && jj log -r main --no-graph -T commit_id)"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"
 check_contains "says it signs" "Signing the release commit" "${OUT}"
 check_eq "tagged commit signed" yes "$(signed_commit 'v0.1.0^{commit}')"
@@ -98,7 +98,7 @@ new_remote norevset
 d="${TMP}/norevset"; new_jj_repo "$d" example.com/norevset
 jj_change "$d" "feat: thing"
 run_task "$d" prepare
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"
 check_eq "commit unsigned" no "$(signed_commit 'v0.1.0^{commit}')"
 
@@ -113,7 +113,7 @@ printf 'go 1.21\n\nuse (\n\t.\n\t./sub\n)\n' > "$d/go.work"
 git -C "$d" add -A && git -C "$d" commit -q -m "feat: sub"
 run_task "$d" prepare
 check_eq "prepare succeeds" 0 "${STATUS}"
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"
 check_contains "root tag signed" "BEGIN SSH SIGNATURE" "$(git --git-dir="${REMOTE}" cat-file tag v0.1.0)"
 check_eq "annotation is the newest section" "$(newest_section "$d/CHANGELOG.md")" "$(tag_message v0.1.0)"
@@ -125,7 +125,7 @@ new_remote git-plain
 d="${TMP}/git-plain"; new_git_repo "$d" example.com/gitplain
 git_change "$d" "feat: thing"
 run_task "$d" prepare
-run_task "$d" push
+run_task "$d" push usage_yes=true
 check_eq "push succeeds" 0 "${STATUS}"
 check_eq "root tag is an object" "tag" "$(git --git-dir="${REMOTE}" cat-file -t v0.1.0)"
 check_lacks "root tag unsigned" "BEGIN SSH SIGNATURE" "$(git --git-dir="${REMOTE}" cat-file tag v0.1.0)"

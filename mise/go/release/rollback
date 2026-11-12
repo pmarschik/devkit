@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Undo a local release:prepare before release:push"
+#USAGE flag "-y --yes"            help="Run without asking; required when there is no terminal"
+#USAGE flag "--non-interactive"   help="Same as --yes"
 set -euo pipefail
 # shellcheck source=../_lib.sh
 source "$(dirname "$0")/../_lib.sh"

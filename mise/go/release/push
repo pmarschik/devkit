@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #MISE description="Publish the prepared release; on GitHub also write the release notes and tidy go.sum"
-#USAGE flag "-n --dry-run" help="Check the prepared release and print what would be pushed"
+#USAGE flag "-n --dry-run"        help="Check the prepared release and print what would be pushed"
+#USAGE flag "-y --yes"            help="Run without asking; required when there is no terminal"
+#USAGE flag "--non-interactive"   help="Same as --yes"
 set -euo pipefail
 # shellcheck source=../_lib.sh
 source "$(dirname "$0")/../_lib.sh"

@@ -36,8 +36,20 @@ info()    { echo -e "  ${cyan}${bold}❯${reset}  $*"; }
 success() { echo -e "  ${green}✔${reset}  $*"; }
 warn()    { echo -e "  ${yellow}⚠${reset}  $*"; }
 die()     { echo -e "  ${red}✖${reset}  $*" >&2; exit 1; }
+# Ask a yes/no question on the terminal.
+#
+# --yes, --non-interactive (the same flag) or DEVKIT_NON_INTERACTIVE=1 answer
+# yes without asking, terminal or not. Without one of them and without a
+# terminal it refuses: an agent or a script that runs release:push by accident
+# stops here instead of publishing a release nobody confirmed.
+assume_yes() {
+  [[ "${usage_yes:-false}" == "true" || "${usage_non_interactive:-false}" == "true" \
+    || "${DEVKIT_NON_INTERACTIVE:-}" == "1" || "${DEVKIT_NON_INTERACTIVE:-}" == "true" ]]
+}
 confirm() {
-  [[ -t 0 ]] || return 0  # non-interactive: proceed automatically
+  assume_yes && return 0
+  [[ -t 0 ]] \
+    || die "no terminal to confirm \"$1\" — pass --yes (or --non-interactive, or set DEVKIT_NON_INTERACTIVE=1) to run without asking"
   echo -e "  ${yellow}${bold}?${reset}  $1 ${bold}[y/N]${reset} \c"
   read -r answer
   [[ "${answer,,}" == "y" ]]
