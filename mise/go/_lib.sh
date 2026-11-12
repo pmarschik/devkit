@@ -106,20 +106,112 @@ expected_release_tags() {
 # Re-runnable: tags of the same name move onto ${2}, which covers a push that
 # failed after tagging.
 # Needs discover_modules to have run.
+#
+# The root tag is annotated with the newest CHANGELOG.md section, heading and
+# all, so `git show vX.Y.Z` and any forge reading the tag show the release
+# notes. --cleanup=verbatim keeps it whole: git's default cleanup takes every
+# line starting with # for a comment and would strip the very headings. Whether
+# the tag is signed is the user's tag.gpgSign — nothing here forces it either
+# way. jj cannot write an annotated tag, so under jj `jj tag set` places every
+# tag and git, in the backing repository, then replaces the root one with the
+# annotated object at the same commit; jj imports it on its next command, and
+# `jj git push --tag` sends the object.
+#
+# The module tags stay lightweight and unsigned (--no-sign): they exist so
+# `go get` can find each module, carry no notes, and with tag.gpgSign set a
+# lightweight tag would demand a message and a signature — ten of them, each a
+# hardware-key touch, on one commit.
 create_release_tags() {
-  local version="$1" commit="$2" name
+  local version="$1" commit="$2" name notes
   expected_release_tags "${version}"
+
+  notes=$(mktemp)
+  changelog_section > "${notes}"
+  [[ -s "${notes}" ]] || printf '%s\n' "${version}" > "${notes}"
 
   if [[ "${VCS}" == "jj" ]]; then
     jj tag set "${RELEASE_TAGS[@]}" -r "${commit}" --allow-move
+    git --git-dir="$(jj git root)" tag -f -a --cleanup=verbatim -F "${notes}" "${version}" "${commit}" > /dev/null \
+      || { rm -f "${notes}"; die "could not annotate ${version} (output above)"; }
+    jj git import > /dev/null 2>&1 || true
     jj tag track "${RELEASE_TAGS[@]}" --remote origin
   else
-    git tag --no-sign -f -a "${version}" -m "${HIGHLIGHTS:-${version}}" "${commit}"
+    git tag -f -a --cleanup=verbatim -F "${notes}" "${version}" "${commit}" \
+      || { rm -f "${notes}"; die "could not create ${version} (output above)"; }
     for name in "${RELEASE_TAGS[@]:1}"; do
       git tag --no-sign -f "${name}" "${commit}"
     done
   fi
+  rm -f "${notes}"
   success "Tagged: ${RELEASE_TAGS[*]}"
+}
+
+# Echo the newest release section of CHANGELOG.md: from its "## [x.y.z]"
+# heading to the next one, without the link reference definitions a footer
+# puts after the last section, and without blank lines at either end.
+changelog_section() {
+  awk '/^## \[/{if(p) exit; p=1} p' CHANGELOG.md 2>/dev/null \
+    | { grep -vE '^\[[^]]+\]: ' || true; } \
+    | sed -e '/./,$!d' \
+    | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
+}
+
+# The jq filter release:prepare runs over the git cliff context. A release
+# whose tag message is a whole changelog section (create_release_tags writes
+# those) gets its highlights back — the lines between the heading and the first
+# "### " group, null when there are none. A message that is only the version, as
+# older tags carry, becomes null. Anything else is a real highlight and stays.
+# shellcheck disable=SC2016,SC2034 # jq, not shell; read by release:prepare
+CHANGELOG_CONTEXT_FILTER='
+def highlights:
+  split("\n") | .[1:]
+  | (map(startswith("### ")) | index(true)) as $i
+  | (if $i == null then . else .[:$i] end)
+  | join("\n") | gsub("^\\s+|\\s+$"; "")
+  | if . == "" then null else . end;
+map(
+  if ((.message // "") | startswith("## ")) then .message = (.message | highlights)
+  elif .message == .version then .message = null
+  else . end
+)'
+
+# Sign the jj release commit, and the unpushed commits under it, before the
+# tag freezes them — when the user's jj config says their pushed commits get
+# signed. Sets RELEASE_COMMIT to the release commit's id, which signing changes.
+#
+# jj signs on push only the mutable commits git-sign-on-push selects, and the
+# tag makes the release commit and every ancestor immutable by then: jj says
+# "Skipped signing N immutable commits" and pushes them unsigned. So the commits
+# that push would have signed are signed here, while they still can be: the
+# mutable ancestors of the release commit that git-sign-on-push selects, or —
+# with signing.behavior own or force, which sign as they go — any of them still
+# unsigned. Nothing happens unless signing.backend is set. The bookmark follows
+# the rewrite.
+sign_release_commit_if_configured() {
+  local commit="$1" backend behavior revset change targets
+  RELEASE_COMMIT="${commit}"
+  backend=$(jj config get signing.backend 2>/dev/null || true)
+  [[ -n "${backend}" && "${backend}" != "none" ]] || return 0
+
+  behavior=$(jj config get signing.behavior 2>/dev/null || true)
+  if [[ "${behavior}" == "own" || "${behavior}" == "force" ]]; then
+    revset="all()"
+  else
+    revset=$(jj config get revsets.git-sign-on-push 2>/dev/null || true)
+    [[ -n "${revset}" && "${revset}" != "none()" ]] || return 0
+  fi
+  targets="::${commit} & mutable() & ~signed() & (${revset})"
+  [[ -n "$(jj log -r "${targets}" --no-graph -T 'commit_id' 2>/dev/null)" ]] || return 0
+
+  if [[ "${SIGN_DRY_RUN:-false}" == "true" ]]; then
+    info "Would sign the release commit and its unpushed ancestors (jj signing.backend=${backend})"
+    return 0
+  fi
+  info "Signing the release commit and its unpushed ancestors (jj signing.backend=${backend})… (hardware key touch may be required)"
+  change=$(jj log -r "${commit}" --no-graph -T 'change_id')
+  jj sign -r "${targets}" || die "jj sign failed (output above)"
+  RELEASE_COMMIT=$(jj log -r "${change}" --no-graph -T 'commit_id')
+  success "Signed: ${RELEASE_COMMIT:0:12}"
 }
 
 # Echo the origin URL, empty when there is no origin.

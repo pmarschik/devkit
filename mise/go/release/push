@@ -90,6 +90,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
     RELEASE_COMMIT=$(jj log -r "${RELEASE_REV}" --no-graph --template 'commit_id')
     verify_jj_prepared_release "${RELEASE_COMMIT}"
     success "Prepared release state verified at ${RELEASE_REV} (${RELEASE_COMMIT:0:12})"
+    SIGN_DRY_RUN=true sign_release_commit_if_configured "${RELEASE_COMMIT}"
   fi
   BATCH_SIZE=$(tag_batch_size)
   if [[ "${BATCH_SIZE}" -le 0 ]]; then
@@ -142,6 +143,10 @@ else
   verify_jj_prepared_release "${RELEASE_COMMIT}"
   success "Prepared release state verified"
 
+  # Sign before the tag freezes the commit; signing on push cannot reach it then.
+  sign_release_commit_if_configured "${RELEASE_COMMIT}"
+  verify_jj_prepared_release "${RELEASE_COMMIT}"
+
   # Tag here rather than in prepare: a tag freezes its commit, and freezing the
   # commit under review would move the working copy off it mid-review.
   create_release_tags "${version}" "${RELEASE_COMMIT}"
@@ -193,7 +198,7 @@ fi
 # (goreleaser's --release-notes, say), and gh could not reach it anyway.
 if github_remote; then
   info "Updating GitHub release notes…"
-  notes=$(awk '/^## \[/{if(p) exit; p=1; next} p' CHANGELOG.md | sed '/./,$!d')
+  notes=$(changelog_section | tail -n +2 | sed '/./,$!d')
   if gh release view "${version}" &>/dev/null; then
     gh release edit "${version}" --notes "${notes}"
   else

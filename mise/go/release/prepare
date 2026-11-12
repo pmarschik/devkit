@@ -118,7 +118,22 @@ if [[ -n "${HIGHLIGHTS}" ]]; then
   info "Highlights: ${HIGHLIGHTS}"
 fi
 
-${CLIFF} --tag "${version}" "${CLIFF_REV[@]}" "${CLIFF_EXTRA[@]}" -o CHANGELOG.md
+# Generated through git cliff's context rather than straight to the file. The
+# release tags carry their whole changelog section as the annotation (see
+# create_release_tags), and git cliff renders a tag's message as that release's
+# highlights, so a plain regeneration would print every past section twice. The
+# filter cuts such a message back to the highlights it began with, and drops the
+# bare version an older tag carried as its message.
+command -v jq > /dev/null || die "jq is required to generate CHANGELOG.md"
+cliff_ctx=$(mktemp)
+trap 'rm -f "${cliff_ctx}"' EXIT
+${CLIFF} --tag "${version}" "${CLIFF_REV[@]}" "${CLIFF_EXTRA[@]}" --context -o "${cliff_ctx}" \
+  || die "git cliff --context failed (output above)"
+jq "${CHANGELOG_CONTEXT_FILTER}" "${cliff_ctx}" > "${cliff_ctx}.new" \
+  || die "could not filter the git cliff context (output above)"
+mv "${cliff_ctx}.new" "${cliff_ctx}"
+${CLIFF} --from-context "${cliff_ctx}" -o CHANGELOG.md \
+  || die "git cliff --from-context failed (output above)"
 success "CHANGELOG.md updated"
 
 # dprint with the repo's own config formats exactly this one file, the same way
