@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Publish the prepared release and tidy go.sum after verification"
+#MISE description="Publish the prepared release; on GitHub also write the release notes and tidy go.sum"
 #USAGE flag "-n --dry-run" help="Check the prepared release and print what would be pushed"
 set -euo pipefail
 # shellcheck source=../_lib.sh
@@ -26,13 +26,15 @@ if [[ "${VCS}" == "git" ]]; then
   [[ "${branch}" == "main" || "${branch}" == "master" ]] \
     || die "must be on main/master branch (current: ${branch})"
 
+  # A first release writes CHANGELOG.md from nothing, so it is untracked, and
+  # `git diff HEAD` alone would report no pending changelog.
   unexpected=()
   has_changelog=false
   while IFS= read -r path; do
     [[ -z "${path}" ]] && continue
     [[ "${path}" == "CHANGELOG.md" ]] && has_changelog=true
     is_release_prepare_path "${path}" || unexpected+=("${path}")
-  done < <(git diff --name-only HEAD --)
+  done < <(git diff --name-only HEAD --; git ls-files --others --exclude-standard -- CHANGELOG.md)
 
   [[ ${#unexpected[@]} -eq 0 ]] \
     || die "unexpected uncommitted changes — only release:prepare outputs expected:\n${unexpected[*]}"
@@ -55,6 +57,10 @@ if [[ "${VCS}" == "jj" ]]; then
   fi
   [[ -n "${version}" ]] \
     || die "neither @ nor the parent of an empty @ is a release commit — run 'mise run release:prepare' first"
+elif [[ -z "$(git tag -l 'v[0-9]*')" ]]; then
+  # The first release, decided the way release:prepare decides it: git cliff
+  # proposes 0.1.0, which tag_pattern = "^v[0-9]" rejects as an error.
+  version="v0.1.0"
 else
   raw_version=$(git cliff --config .config/cliff.toml --bumped-version 2>/dev/null) \
     || die "could not determine version from git cliff"
@@ -91,10 +97,22 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   else
     BATCH_DESC="in batches of ${BATCH_SIZE}"
   fi
-  info "Would tag the release commit, push bookmark main, then tag ${version}, then $((${#RELEASE_TAGS[@]} - 1)) module tags ${BATCH_DESC}:"
-  printf '         %s\n' "${RELEASE_TAGS[@]:1}"
-  info "Would open or update the GitHub release ${version} from CHANGELOG.md"
-  info "Would wait for the proxy to serve ${ROOT_MODULE}@${version}, tidy go.sum and commit"
+  if [[ ${#RELEASE_TAGS[@]} -gt 1 ]]; then
+    info "Would tag the release commit, push bookmark main, then tag ${version}, then $((${#RELEASE_TAGS[@]} - 1)) module tags ${BATCH_DESC}:"
+    printf '         %s\n' "${RELEASE_TAGS[@]:1}"
+  else
+    info "Would tag the release commit, push bookmark main, then tag ${version}"
+  fi
+  if github_remote; then
+    info "Would open or update the GitHub release ${version} from CHANGELOG.md"
+  else
+    info "Would leave the release page alone: origin is not on github.com"
+  fi
+  if post_tidy_applies; then
+    info "Would wait for the proxy to serve ${ROOT_MODULE}@${version}, tidy go.sum and commit"
+  else
+    info "Would skip the proxy wait and go.sum tidy: $(post_tidy_skip_reason)"
+  fi
   echo ""
   echo -e "  ${green}${bold}✓ Dry run only — nothing was pushed.${reset}"
   echo ""
@@ -102,7 +120,12 @@ if [[ "${DRY_RUN}" == "true" ]]; then
 fi
 
 # ── confirm ──────────────────────────────────────────────────────────────────
-confirm "Push ${version} and tidy go.sum?" \
+if post_tidy_applies; then
+  CONFIRM_TEXT="Push ${version} and tidy go.sum?"
+else
+  CONFIRM_TEXT="Push ${version}?"
+fi
+confirm "${CONFIRM_TEXT}" \
   || { warn "Aborted."; echo ""; exit 0; }
 echo ""
 
@@ -147,8 +170,9 @@ fi
 success "Branch pushed"
 
 # Root tag alone — GitHub suppresses the push event when more than three tags
-# arrive at once, and .github/workflows/release.yml listens for exactly this one.
-info "Pushing root tag ${version} (triggers GitHub Actions)…"
+# arrive at once, and the release pipeline (a GitHub workflow, a GitLab tag
+# pipeline) listens for exactly this one.
+info "Pushing root tag ${version} (triggers the release pipeline)…"
 push_tags "${version}"
 success "Root tag pushed"
 
@@ -164,19 +188,33 @@ fi
 
 # GoReleaser, where a repo runs it, opens the release when the root tag lands
 # but leaves the notes to whatever it generates. This writes the changelog
-# section instead, and covers the case where the workflow never fired.
-info "Updating GitHub release notes…"
-notes=$(awk '/^## \[/{if(p) exit; p=1; next} p' CHANGELOG.md | sed '/./,$!d')
-if gh release view "${version}" &>/dev/null; then
-  gh release edit "${version}" --notes "${notes}"
+# section instead, and covers the case where the workflow never fired. GitHub
+# only: on any other forge the CI that owns the release page writes its notes
+# (goreleaser's --release-notes, say), and gh could not reach it anyway.
+if github_remote; then
+  info "Updating GitHub release notes…"
+  notes=$(awk '/^## \[/{if(p) exit; p=1; next} p' CHANGELOG.md | sed '/./,$!d')
+  if gh release view "${version}" &>/dev/null; then
+    gh release edit "${version}" --notes "${notes}"
+  else
+    gh release create "${version}" --title "${version}" --notes "${notes}"
+  fi
+  success "Release notes updated"
 else
-  gh release create "${version}" --title "${version}" --notes "${notes}"
+  info "Skipping the release notes: origin is not on github.com"
 fi
-success "Release notes updated"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3 — wait for proxy, tidy go.sum, commit + push (second key touch)
 # ═══════════════════════════════════════════════════════════════════════════════
+if ! post_tidy_applies; then
+  info "Skipping the proxy wait and go.sum tidy: $(post_tidy_skip_reason)"
+  echo ""
+  echo -e "  ${green}${bold}✓ Release ${version} is complete.${reset}"
+  echo ""
+  exit 0
+fi
+
 echo ""
 info "Waiting for proxy to serve ${version}…"
 if ! wait_for_proxy "${version}"; then

@@ -5,13 +5,19 @@
 #
 # The release/* tasks release a Go repo: one commit carries the root tag vX.Y.Z
 # and a <subdir>/vX.Y.Z tag for every other module in go.work. A module reaches
-# its users through the Go module proxy, so the release is finished when the
-# tags are on GitHub and the proxy serves them. GoReleaser, if the repo runs
-# it, only adds binaries on top of that.
+# its users through the Go module proxy, so a multi-module release on GitHub is
+# finished when the tags are pushed and the proxy serves them. GoReleaser, if
+# the repo runs it, only adds binaries on top of that.
 #
-# go.work is optional. A repo without one is a single module at the root, and
-# every task treats it as a one-entry workspace, so the root tag is the only
-# tag and there is no go.work.sum to sync.
+# The module set decides the shape of the release, with no switch to set. A repo
+# whose go.work lists more than one module of its own gets per-module tags, its
+# intra-repo requires pinned in every go.mod and go.work, and — on github.com —
+# the wait for the proxy and the go.sum tidy afterwards. A repo with a single
+# module, at the root and with or without a go.work, gets the root tag alone:
+# nothing to pin, no proxy to wait for, no go.sum to re-tidy. The GitHub
+# release notes follow the remote rather than the module count: they are
+# written for a github.com origin and skipped anywhere else, where the forge's
+# own CI owns the release page.
 #
 # What the consuming repo must provide:
 #   .config/dprint.json     extending devkit's dprint/go.json
@@ -20,7 +26,8 @@
 #                           never wins the "latest tag" race (release only)
 #   CHANGELOG.md            written by git cliff, formatted by dprint with
 #                           .config/dprint.json, or by hk without it (release only)
-#   gh                      authenticated, for the GitHub release (release only)
+#   gh                      authenticated, for the GitHub release notes, on a
+#                           github.com origin only (release only)
 #
 # See the devkit README for the include line and the pinning policy.
 
@@ -124,6 +131,47 @@ remote_url() {
   fi
 }
 
+# True when origin is on github.com. A GitHub Enterprise host under its own
+# domain does not match; see DEVKIT_TAG_BATCH and DEVKIT_POST_TIDY.
+github_remote() {
+  [[ "$(remote_url)" == *github.com[:/]* ]]
+}
+
+# True when the release covers more than one module: per-module tags, pinned
+# intra-repo requires and the post-release go.sum tidy. Needs discover_modules.
+multi_module() {
+  [[ ${#MONOREPO_MODULES[@]} -gt 1 ]]
+}
+
+# True when release:push should wait for the module proxy and re-tidy go.sum.
+#
+# The tidy exists for one thing: a module's go.sum entries for a sibling module
+# at the new version, which only the proxy can supply once the tags are out. A
+# single module has no sibling to record, and a module on a host other than
+# github.com is typically private, so the public proxy can never serve it and
+# the wait would time out after two minutes every release.
+#
+# DEVKIT_POST_TIDY=1 forces the step (a GitHub Enterprise host, a private proxy
+# the toolchain is configured for) and DEVKIT_POST_TIDY=0 turns it off.
+post_tidy_applies() {
+  case "${DEVKIT_POST_TIDY:-}" in
+    1 | true) return 0 ;;
+    0 | false) return 1 ;;
+  esac
+  multi_module && github_remote
+}
+
+# Why post_tidy_applies said no, as a phrase.
+post_tidy_skip_reason() {
+  if [[ "${DEVKIT_POST_TIDY:-}" == "0" || "${DEVKIT_POST_TIDY:-}" == "false" ]]; then
+    echo "DEVKIT_POST_TIDY=${DEVKIT_POST_TIDY}"
+  elif ! multi_module; then
+    echo "a single module has no sibling go.sum entries to fill in"
+  else
+    echo "origin is not on github.com, so the public proxy cannot serve it"
+  fi
+}
+
 # Tags per push, 0 meaning "all of them in one push".
 #
 # GitHub creates no push event when more than three tags arrive in one push
@@ -141,7 +189,7 @@ remote_url() {
 tag_batch_size() {
   if [[ -n "${DEVKIT_TAG_BATCH:-}" ]]; then
     echo "${DEVKIT_TAG_BATCH}"
-  elif [[ "$(remote_url)" == *github.com[:/]* ]]; then
+  elif github_remote; then
     echo 3
   else
     echo 0
@@ -206,9 +254,13 @@ is_release_prepare_path() {
   esac
 }
 
+# The files release:prepare writes. A single-module release touches only the
+# changelog — go.mod is listed so a commit under git stays complete — and never
+# a go.work, which in such a repo is often a gitignored local override.
 release_prepare_paths() {
   local dir modfile
   RELEASE_PREPARE_PATHS=(CHANGELOG.md go.mod)
+  multi_module || return 0
   [[ -f go.work ]] && RELEASE_PREPARE_PATHS+=(go.work)
   for dir in "${MODULE_DIRS[@]}"; do
     [[ "$dir" == "." ]] && continue

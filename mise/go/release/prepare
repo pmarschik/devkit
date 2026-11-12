@@ -142,50 +142,56 @@ fi
 # A module that another module in the workspace imports gets its require pinned
 # to the version about to be tagged, and its local replace dropped. Modules the
 # repo never cross-imports pass through untouched.
-info "Pinning monorepo module versions in go.mod files…"
 discover_modules
-for dir in "${MODULE_DIRS[@]}"; do
-  pushd "$dir" > /dev/null
-  for mod in "${MONOREPO_MODULES[@]}"; do
-    # Pin version if already required (ignores modules not in this module's deps)
-    if grep -q "\"${mod}\"" go.mod 2>/dev/null || grep -q "${mod} v" go.mod 2>/dev/null; then
-      go mod edit -require="${mod}@${version}" 2>/dev/null || true
-    fi
-    # Strip intra-monorepo replace directives
-    go mod edit -dropreplace="${mod}" 2>/dev/null || true
-  done
-  popd > /dev/null
-done
-success "go.mod files updated"
-
-# ── update go.work: its local replaces pin the same upcoming versions ────────
-# The go.mod files now require ${version} of every monorepo module they depend
-# on, and the proxy cannot serve those until the tags exist. go.work resolves
-# exactly those versions to this checkout, so a stale or missing pin here
-# breaks every build between prepare and push with "unknown revision
-# ${version}" — the workspace `use` list alone does not cover it. A submodule
-# required by another submodule needs a pin, and so does the root module when a
-# submodule requires it back. Edited with sed rather than `go work edit` to
-# keep the comment above the directives.
-if [[ -f go.work ]]; then
-  info "Pinning monorepo replaces in go.work…"
-  GO_MOD_FILES=()
+if ! multi_module; then
+  info "Single module (${ROOT_MODULE}) — one tag, nothing to pin"
+else
+  info "Pinning monorepo module versions in go.mod files…"
   for dir in "${MODULE_DIRS[@]}"; do
-    [[ "$dir" == "." ]] && GO_MOD_FILES+=("go.mod") || GO_MOD_FILES+=("$dir/go.mod")
+    pushd "$dir" > /dev/null
+    for mod in "${MONOREPO_MODULES[@]}"; do
+      # Pin version if already required (ignores modules not in this module's deps)
+      if grep -q "\"${mod}\"" go.mod 2>/dev/null || grep -q "${mod} v" go.mod 2>/dev/null; then
+        go mod edit -require="${mod}@${version}" 2>/dev/null || true
+      fi
+      # Strip intra-monorepo replace directives
+      go mod edit -dropreplace="${mod}" 2>/dev/null || true
+    done
+    popd > /dev/null
   done
-  for i in "${!MONOREPO_MODULES[@]}"; do
-    mod="${MONOREPO_MODULES[$i]}"
-    dir="${MODULE_DIRS[$i]}"
-    [[ "$dir" == "." ]] || dir="./${dir}"
-    if grep -q "^replace ${mod} v" go.work; then
-      sed -i.bak "s|^replace ${mod} v[^ ]* => .*|replace ${mod} ${version} => ${dir}|" go.work
-      rm -f go.work.bak
-    elif grep -qE "^[[:space:]]*${mod} v" "${GO_MOD_FILES[@]}"; then
-      # Depended on by a sibling module: it needs a pin from now on.
-      printf '\nreplace %s %s => %s\n' "${mod}" "${version}" "${dir}" >> go.work
-    fi
-  done
-  success "go.work updated"
+  success "go.mod files updated"
+
+  # ── update go.work: its local replaces pin the same upcoming versions ────────
+  # The go.mod files now require ${version} of every monorepo module they depend
+  # on, and the proxy cannot serve those until the tags exist. go.work resolves
+  # exactly those versions to this checkout, so a stale or missing pin here
+  # breaks every build between prepare and push with "unknown revision
+  # ${version}" — the workspace `use` list alone does not cover it. A submodule
+  # required by another submodule needs a pin, and so does the root module when a
+  # submodule requires it back. Edited with sed rather than `go work edit` to
+  # keep the comment above the directives.
+  if [[ -f go.work ]]; then
+    info "Pinning monorepo replaces in go.work…"
+    GO_MOD_FILES=()
+    for dir in "${MODULE_DIRS[@]}"; do
+      [[ "$dir" == "." ]] && GO_MOD_FILES+=("go.mod") || GO_MOD_FILES+=("$dir/go.mod")
+    done
+    for i in "${!MONOREPO_MODULES[@]}"; do
+      mod="${MONOREPO_MODULES[$i]}"
+      dir="${MODULE_DIRS[$i]}"
+      [[ "$dir" == "." ]] || dir="./${dir}"
+      if grep -q "^replace ${mod} v" go.work; then
+        sed -i.bak "s|^replace ${mod} v[^ ]* => .*|replace ${mod} ${version} => ${dir}|" go.work
+        rm -f go.work.bak
+      elif grep -qE "^[[:space:]]*(require[[:space:]]+)?${mod} v" "${GO_MOD_FILES[@]}"; then
+      # A block or a one-line require: go mod edit collapses a block holding a
+      # single require onto one line.
+        # Depended on by a sibling module: it needs a pin from now on.
+        printf '\nreplace %s %s => %s\n' "${mod}" "${version}" "${dir}" >> go.work
+      fi
+    done
+    success "go.work updated"
+  fi
 fi
 
 # ── jj: describe the working copy and move the bookmark ───────────────────────
