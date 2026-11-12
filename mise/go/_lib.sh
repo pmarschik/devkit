@@ -26,10 +26,17 @@
 #                           never wins the "latest tag" race (release only)
 #   CHANGELOG.md            written by git cliff, formatted by dprint with
 #                           .config/dprint.json, or by hk without it (release only)
+#   jq                      to filter the git cliff context (release only)
 #   gh                      authenticated, for the GitHub release notes, on a
 #                           github.com origin only (release only)
 #
-# See the devkit README for the include line and the pinning policy.
+# Environment the release tasks read:
+#   DEVKIT_POST_TIDY=1|0          force the proxy wait and go.sum tidy on or off
+#   DEVKIT_TAG_BATCH=N            tags per push (0: all at once)
+#   DEVKIT_NON_INTERACTIVE=1      the same as --yes: confirm without asking
+#
+# See the devkit README for the include line, the pinning policy, the tag
+# annotation and the signing rules.
 
 bold='\033[1m'; cyan='\033[36m'; green='\033[32m'; yellow='\033[33m'; red='\033[31m'; reset='\033[0m'
 info()    { echo -e "  ${cyan}${bold}❯${reset}  $*"; }

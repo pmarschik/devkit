@@ -229,8 +229,7 @@ golangci-lint runs in parallel collide on its lock.
 ### Release tasks
 
 One commit carries the root tag `vX.Y.Z` and a `<subdir>/vX.Y.Z` tag for every
-other module in `go.work`. In a single-module repo the root tag is the only one,
-and there is no `go.work.sum` to sync.
+other module in `go.work`.
 
 | Task                | What it does                                                         |
 | ------------------- | -------------------------------------------------------------------- |
@@ -240,8 +239,36 @@ and there is no `go.work.sum` to sync.
 | `release:post-tidy` | Redoes the `go.sum` step when the proxy was still catching up        |
 | `release:cog-check` | `cog check`, unsetting `extensions.relativeWorktrees` around the run |
 
+The module set and the origin decide which steps run. Nothing is configured:
+
+| Repo                                 | Tags              | Pinned requires | Release notes (`gh`) | Proxy wait + `go.sum` tidy |
+| ------------------------------------ | ----------------- | --------------- | -------------------- | -------------------------- |
+| One module, `github.com` origin      | root              | —               | yes                  | —                          |
+| One module, any other origin         | root              | —               | —                    | —                          |
+| Several modules, `github.com` origin | root + per-module | yes             | yes                  | yes                        |
+| Several modules, any other origin    | root + per-module | yes             | —                    | —                          |
+
+"Several modules" means a `go.work` listing more than one module inside the
+repo. A `go.work` that only adds sibling checkouts — the gitignored local
+override — still leaves one module, and `release:prepare` never edits it. The
+tidy exists for one thing, the `go.sum` entries one module needs for a sibling
+at the new version, which only the proxy can supply. A single module has no
+sibling, and a module off `github.com` is usually private, so the public proxy
+would time out on it after two minutes every release. `DEVKIT_POST_TIDY=1`
+forces the step back on (a GitHub Enterprise host, a private proxy the
+toolchain is configured for), `DEVKIT_POST_TIDY=0` turns it off, and
+`release:post-tidy` says why it has nothing to do rather than waiting. On a
+forge other than GitHub the CI that owns the release page writes the notes, for
+example GoReleaser with `--release-notes` fed from the tag annotation below.
+
 Run `mise run release:push --dry-run` to check the prepared state and print
 what would be pushed. It reaches no remote and changes nothing locally.
+
+`release:push` and `release:rollback` ask before they act. Without a terminal
+they refuse instead, so an agent or a script that runs one by accident stops
+there; pass `--yes` (alias `--non-interactive`) or set
+`DEVKIT_NON_INTERACTIVE=1` to answer for them. With a terminal the flag skips
+the question. `release:prepare` accepts the same flags and asks nothing.
 
 `release:prepare` runs `cog check` through `release:cog-check`, over the
 commits of the release being prepared: the range from the newest `vX.Y.Z` tag
@@ -275,6 +302,38 @@ release and you can amend it. `release:push` writes the tags, because a tag
 freezes its commit under jj and would slide the working copy onto an empty
 child mid-review.
 
+#### Tag annotation and signing
+
+The root tag is annotated with the newest `CHANGELOG.md` section, heading
+included, so `git show vX.Y.Z` and anything reading the tag show the release
+notes. It is written with `git tag -a --cleanup=verbatim -F`: git's default
+cleanup drops every line starting with `#`, which is every heading in the
+section. jj cannot write an annotated tag, so under jj the task runs that same
+`git tag` in the backing repository after `jj tag set`, and `jj git push --tag`
+sends the tag object. The module tags stay lightweight and unsigned
+(`--no-sign`): they exist for `go get`, carry no notes, and under
+`tag.gpgSign` each would otherwise want its own message and key touch.
+
+git cliff renders a tag's message as that release's highlights (`{{ message }}`
+in the template), so a plain regeneration would print every annotated section
+twice. `release:prepare` therefore renders through `git cliff --context`, runs
+a `jq` filter that cuts a section-shaped message back to the highlights it began
+with (and drops a message that is only the version, as older tags carry), and
+writes the file with `--from-context`. On a repo with no such tags the output is
+byte-identical to a direct run.
+
+Signing follows your own config and nothing forces it:
+
+- **git** — the release commit follows `commit.gpgSign` and the root tag
+  `tag.gpgSign`.
+- **jj** — signing on push cannot reach the release: the tag makes the release
+  commit and its unpushed ancestors immutable first, and jj pushes those
+  unsigned with "Skipped signing N immutable commits". So when
+  `signing.backend` is set and `revsets.git-sign-on-push` selects them (or
+  `signing.behavior` is `own` or `force`), `release:push` runs `jj sign` on the
+  mutable, still unsigned ancestors of the release commit before it tags, and
+  carries on with the rewritten commit. `--dry-run` says whether it would.
+
 Copy `docs/go/RELEASING.md` into the consumer's own `docs/`. It is the command
 sequence and the recovery table, and it links back here for everything this
 section explains.
@@ -295,7 +354,9 @@ section explains.
 - `CHANGELOG.md`, written by `git cliff`. `release:prepare` formats it with
   `dprint fmt -c .config/dprint.json CHANGELOG.md`, and falls back to
   `hk fix CHANGELOG.md` only in a repo without that config.
-- `gh`, authenticated, for the GitHub release.
+- `jq`, which `release:prepare` uses to filter the git cliff context.
+- `gh`, authenticated, for the GitHub release notes — on a `github.com` origin
+  only.
 - The tools themselves in `[tools]`: `go`, `golangci-lint`, `dprint`, `hk`,
   `typos-cli`, `git-cliff`, `cocogitto`.
 

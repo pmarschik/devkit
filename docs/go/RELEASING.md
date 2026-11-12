@@ -6,8 +6,9 @@ The release tasks come from [devkit](https://github.com/pmarschik/devkit). Its
 README explains the tag layout, the jj and git differences, and why each step
 happens. This file is the sequence.
 
-One release commit carries the root tag `vX.Y.Z` and a `<subdir>/vX.Y.Z` tag for
-every other module in `go.work`.
+One release commit carries the root tag `vX.Y.Z`, annotated with its changelog
+section, and a `<subdir>/vX.Y.Z` tag for every other module in `go.work`. A
+single-module repo gets the root tag alone and nothing pinned.
 
 ## Before you start
 
@@ -36,15 +37,21 @@ mise run release:push --dry-run
 mise run release:push   # confirms first, then needs a hardware key touch
 ```
 
+Without a terminal `release:push` and `release:rollback` refuse to run. Pass
+`--yes` (or `--non-interactive`, or set `DEVKIT_NON_INTERACTIVE=1`) only when
+you mean it; pushing is yours to start, never an agent's.
+
 `release:prepare` writes `CHANGELOG.md` and pins every intra-repo `require` to
 the new version. Under jj it also describes the release commit, which stays
 mutable, so you can amend it and run `release:prepare` again. Under git the
 changes stay uncommitted until `release:push`. Either way a second
 `release:prepare` re-prepares the same version instead of bumping past it.
 
-`release:push` tags the commit, pushes the branch, pushes the root tag on its
-own, then pushes the module tags. It updates the GitHub release notes, waits for
-the module proxy, and commits the tidied `go.sum` files.
+`release:push` signs the release commit first when your jj signing config asks
+for it, tags the commit, pushes the branch, pushes the root tag on its own, then
+pushes the module tags. On a `github.com` origin it also updates the GitHub
+release notes, and for several modules there it waits for the module proxy and
+commits the tidied `go.sum` files. Elsewhere it stops after the tags.
 
 ## When something goes wrong
 
