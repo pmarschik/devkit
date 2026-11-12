@@ -12,8 +12,14 @@ every other module in `go.work`.
 ## Before you start
 
 - `main` is current and the working copy holds nothing you have not committed.
-- Every commit since the last tag follows Conventional Commits. `cog check`
-  names the ones that do not.
+- Every commit in the history follows Conventional Commits, not only the ones
+  since the last tag: `release:prepare` runs `cog check` over the whole
+  history, and `mise run release:cog-check` names the commits that fail.
+- No other git or jj command touches this repository's worktrees while
+  `release:prepare` runs. If the repo config sets
+  `extensions.relativeWorktrees`, which cocogitto cannot read, the check unsets
+  it for the few seconds `cog` runs and then restores it. A worktree command
+  in that window would see a repository without the extension.
 - `mise run check` passes.
 
 ## Cut the release
@@ -45,6 +51,7 @@ the module proxy, and commits the tidied `go.sum` files.
 | ------------------------------------------------------ | --------------------------------------------- |
 | The prepared release is wrong, nothing has been pushed | `mise run release:rollback`                   |
 | `release:prepare` died partway through                 | Restore the release files, then prepare again |
+| `cog-check: a previous run (pid …) died holding …`     | Run the `git config` and `rm` lines it prints |
 | The proxy was still catching up                        | `mise run release:post-tidy`                  |
 | No Actions run appeared                                | `gh workflow run release.yml -f tag=vX.Y.Z`   |
 

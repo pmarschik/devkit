@@ -60,14 +60,40 @@ fi
 # ── cog check ─────────────────────────────────────────────────────────────────
 if [[ "${FORCE}" == "false" && "${SKIP_COG}" == "false" ]]; then
   info "Checking conventional commits…"
-  cog check 2>&1 | sed 's/^/       /' || die "cog check failed — fix commits before releasing, or pass --skip-cog."
+  # Through the wrapper, not cog directly: cocogitto cannot open a repository
+  # that sets extensions.relativeWorktrees, and the wrapper unsets that key for
+  # the length of the run. See the comment at the top of cog-check.
+  "$(dirname "$0")/cog-check" 2>&1 | sed 's/^/       /' || die "cog check failed — fix commits before releasing, or pass --skip-cog."
   success "Conventional commits OK"
   echo ""
 fi
 
 # ── bump + changelog ──────────────────────────────────────────────────────────
 if [[ -z "${version}" ]]; then
-  raw_version=$(${CLIFF} --bumped-version "${CLIFF_REV[@]}" 2>/dev/null || echo "0.1.0")
+  # The first release is the one case decided here rather than by git cliff:
+  # with no root tag yet it proposes 0.1.0, which the required
+  # tag_pattern = "^v[0-9]" then rejects as an error. Every other failure is a
+  # real one — a bad config, an unknown revision — and used to be swallowed into
+  # a silent 0.1.0 that wrote a changelog and pinned every go.mod to a version
+  # nobody meant. So it stops here, with git cliff's own message.
+  if [[ "${VCS}" == "jj" ]]; then
+    root_tags=$(jj tag list 'glob:v[0-9]*' 2>/dev/null || true)
+  else
+    root_tags=$(git tag -l 'v[0-9]*')
+  fi
+  if [[ -z "${root_tags}" ]]; then
+    raw_version="v0.1.0"
+    info "No v* tag yet — first release"
+  else
+    cliff_err=$(mktemp)
+    if ! raw_version=$(${CLIFF} --bumped-version "${CLIFF_REV[@]}" 2>"${cliff_err}") \
+      || [[ -z "${raw_version}" ]]; then
+      sed 's/^/       /' "${cliff_err}" >&2
+      rm -f "${cliff_err}"
+      die "git cliff --bumped-version failed (output above)"
+    fi
+    rm -f "${cliff_err}"
+  fi
   version="v${raw_version#v}"  # ensure v prefix
   info "Bumped version: ${version}"
 fi

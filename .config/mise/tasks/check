@@ -10,8 +10,10 @@ set -euo pipefail
 # Dotfiles are skipped because macOS drops a .DS_Store into any directory the
 # Finder opens, and the linter reads that binary as a script full of carriage
 # returns. .gitignore keeps it out of the repo, and this keeps it out of the gate.
-find mise .config/mise/tasks -type f -not -name '.*' -print | sort | while read -r file; do
+find mise .config/mise/tasks test -type f -not -name '.*' -print | sort | while read -r file; do
   (cd "$(dirname "$file")" && shellcheck -x "$(basename "$file")")
 done
 
 dprint check -c .config/dprint.json
+
+mise run test

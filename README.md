@@ -238,9 +238,21 @@ and there is no `go.work.sum` to sync.
 | `release:push`      | Verifies the prepared release, tags it, pushes it, tidies `go.sum`   |
 | `release:rollback`  | Undoes a local `release:prepare` that you have not pushed            |
 | `release:post-tidy` | Redoes the `go.sum` step when the proxy was still catching up        |
+| `release:cog-check` | `cog check`, unsetting `extensions.relativeWorktrees` around the run |
 
 Run `mise run release:push --dry-run` to check the prepared state and print
 what would be pushed. It reaches no remote and changes nothing locally.
+
+`release:prepare` runs `cog check` through `release:cog-check`, over the whole
+history. cocogitto 7.0.0 links libgit2 1.9.2, which refuses a repository whose
+config sets `extensions.relativeWorktrees` — git writes that key for
+`git worktree add --relative-paths` — and `GIT_CONFIG_*` overrides do not reach
+it. The task unsets that one key with `git config --local` right before `cog`
+runs and restores the exact previous value right after, from an `EXIT` trap, so
+a failing check, Ctrl-C, `SIGTERM` and `SIGHUP` all leave the config as they
+found it. A lock directory in the git common dir keeps two runs from restoring
+each other's unset state. A repo that shadows `release:prepare` calls
+`mise run release:cog-check -- <cog check args>` rather than `cog check`.
 
 `release:push` pushes the branch, then the root tag alone, then the module tags.
 On a `github.com` remote those go three at a time, because GitHub creates no
@@ -388,7 +400,8 @@ the notes `release:push` wrote with the whole `CHANGELOG.md`.
 
 | Task          | What it does                                            |
 | ------------- | ------------------------------------------------------- |
-| `check`       | shellcheck over everything under `mise/`                |
+| `check`       | shellcheck over `mise/` and `test/`, then `test`        |
+| `test`        | Runs every `test/*.sh` against throwaway git repos      |
 | `upgrade`     | Bumps dprint plugins and hk, reports action-major drift |
 | `validate-hk` | Evaluates both `hk/*.pkl` the way a consumer would      |
 

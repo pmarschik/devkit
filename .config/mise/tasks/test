@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Run the shell tests under test/"
+set -euo pipefail
+
+# Each test builds its own throwaway git repositories under $TMPDIR and never
+# reads the repository it runs in.
+status=0
+for t in test/*.sh; do
+  echo "==> ${t}"
+  bash "${t}" || status=1
+done
+exit "${status}"

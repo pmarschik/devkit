@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#MISE description="Run cog check, working around a git extension cocogitto cannot read"
+set -uo pipefail
+
+# Usage: mise run release:cog-check [-- <cog check args>]
+#
+# cocogitto 7.0.0 links libgit2 1.9.2, which refuses to open a repository whose
+# config sets extensions.relativeWorktrees ("unsupported extension name
+# extensions.relativeworktrees"). git writes that key for `git worktree add
+# --relative-paths` and worktree.useRelativePaths, and it stays set for good, so
+# cog check fails on every run in such a repo. GIT_CONFIG_* overrides do not
+# help: libgit2 reads the extension from the repository's own config file.
+#
+# The workaround unsets the key for the seconds cog runs and puts the previous
+# value back. Every other byte of the config stays as it is: the edit goes
+# through `git config --local` on that one key, never a rewrite of the file.
+# The restore runs from an EXIT trap, so a failing cog, a Ctrl-C, a SIGTERM and
+# a SIGHUP all leave the config as they found it. Only SIGKILL can skip it, and
+# then the lock below keeps the record of what to put back.
+#
+# While the key is unset, git itself treats relative worktrees as unknown, so
+# do not run other git or jj worktree commands in this repository during the
+# check. The window is the length of one cog run.
+#
+# Two runs at once would each read the other's unset state as the original and
+# "restore" the wrong value, so a lock directory in the git common dir
+# serialises them. A second run waits for the first and gives up after
+# DEVKIT_COG_LOCK_WAIT seconds (default 30).
+#
+# COG overrides the binary (tests use it); it defaults to `cog` on PATH.
+
+KEY="extensions.relativeWorktrees"
+COG="${COG:-cog}"
+LOCK_WAIT="${DEVKIT_COG_LOCK_WAIT:-30}"
+
+say() { echo "cog-check: $*" >&2; }
+
+# Not a git repository (a jj workspace has no .git): there is no config to
+# fix, and cog reports the problem itself.
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exec "${COG}" check "$@"
+
+lock="${common}/devkit-cog-check.lock"
+locked=false
+unset_done=false
+previous=""
+
+restore() {
+  if [[ "${unset_done}" == "true" ]]; then
+    if git config --local "${KEY}" "${previous}" \
+      && [[ "$(git config --local --get "${KEY}")" == "${previous}" ]]; then
+      unset_done=false
+    else
+      say "FAILED to restore ${KEY}; run: git config --local ${KEY} '${previous}'"
+      # Keep the lock: it records the value and blocks the next run until
+      # somebody has put it back.
+      return
+    fi
+  fi
+  if [[ "${locked}" == "true" ]]; then
+    rm -rf "${lock}"
+    locked=false
+  fi
+}
+trap restore EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+waited=0
+until mkdir "${lock}" 2>/dev/null; do
+  holder=$(cat "${lock}/pid" 2>/dev/null || true)
+  if [[ -n "${holder}" ]] && ! kill -0 "${holder}" 2>/dev/null; then
+    say "a previous run (pid ${holder}) died holding ${lock}."
+    if [[ -f "${lock}/value" ]]; then
+      say "it had unset ${KEY}; restore it with: git config --local ${KEY} '$(cat "${lock}/value")'"
+    fi
+    say "then remove the lock: rm -rf '${lock}'"
+    exit 1
+  fi
+  if ((waited >= LOCK_WAIT)); then
+    say "another cog check holds ${lock} (pid ${holder:-unknown}); gave up after ${LOCK_WAIT}s"
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+locked=true
+echo $$ > "${lock}/pid"
+
+# Read under the lock, so a concurrent run's unset state is never mistaken for
+# the original.
+if ! previous=$(git config --local --get "${KEY}"); then
+  "${COG}" check "$@"
+  exit
+fi
+
+printf '%s\n' "${previous}" > "${lock}/value"
+say "${KEY} is unset while cog runs (its libgit2 cannot open the repo otherwise) and restored to '${previous}' right after"
+
+status=0
+# Flagged before the edit, so a signal landing mid-unset still restores.
+unset_done=true
+git config --local --unset-all "${KEY}" || exit 1
+"${COG}" check "$@" || status=$?
+restore
+exit "${status}"
