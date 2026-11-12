@@ -292,7 +292,9 @@ section explains.
   tag such as `parsers/toml/v0.5.0` wins the "latest tag" race and every
   `go.mod` gets pinned to that name. Both release tasks guard against the
   result.
-- `CHANGELOG.md`, written by `git cliff` and formatted by `hk`.
+- `CHANGELOG.md`, written by `git cliff`. `release:prepare` formats it with
+  `dprint fmt -c .config/dprint.json CHANGELOG.md`, and falls back to
+  `hk fix CHANGELOG.md` only in a repo without that config.
 - `gh`, authenticated, for the GitHub release.
 - The tools themselves in `[tools]`: `go`, `golangci-lint`, `dprint`, `hk`,
   `typos-cli`, `git-cliff`, `cocogitto`.

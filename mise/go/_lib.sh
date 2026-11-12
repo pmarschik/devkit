@@ -18,7 +18,8 @@
 #   .config/golangci.yml    the linter config fmt and lint pass with -c
 #   .config/cliff.toml      with tag_pattern = "^v[0-9]" so a submodule tag
 #                           never wins the "latest tag" race (release only)
-#   CHANGELOG.md            written by git cliff, formatted by hk (release only)
+#   CHANGELOG.md            written by git cliff, formatted by dprint with
+#                           .config/dprint.json, or by hk without it (release only)
 #   gh                      authenticated, for the GitHub release (release only)
 #
 # See the devkit README for the include line and the pinning policy.

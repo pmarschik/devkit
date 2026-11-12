@@ -121,9 +121,22 @@ fi
 ${CLIFF} --tag "${version}" "${CLIFF_REV[@]}" "${CLIFF_EXTRA[@]}" -o CHANGELOG.md
 success "CHANGELOG.md updated"
 
-info "Formatting CHANGELOG.md…"
-hk fix CHANGELOG.md
-success "CHANGELOG.md formatted"
+# dprint with the repo's own config formats exactly this one file, the same way
+# in the default checkout and in a jj workspace. `hk fix` was the formatter
+# before: it brings the repo's whole hook setup along and depends on finding a
+# git repository the way hk expects, and it is kept only for a repo that has
+# hk but no dprint config.
+if [[ -f .config/dprint.json ]]; then
+  info "Formatting CHANGELOG.md (dprint)…"
+  dprint fmt -c .config/dprint.json CHANGELOG.md
+  success "CHANGELOG.md formatted"
+elif command -v hk > /dev/null; then
+  info "Formatting CHANGELOG.md (hk)…"
+  hk fix CHANGELOG.md
+  success "CHANGELOG.md formatted"
+else
+  warn "No .config/dprint.json and no hk — CHANGELOG.md left as git cliff wrote it"
+fi
 
 # ── update go.mod files: pin monorepo versions + strip replace directives ─────
 # A module that another module in the workspace imports gets its require pinned
