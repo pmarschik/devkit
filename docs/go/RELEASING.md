@@ -12,9 +12,10 @@ every other module in `go.work`.
 ## Before you start
 
 - `main` is current and the working copy holds nothing you have not committed.
-- Every commit in the history follows Conventional Commits, not only the ones
-  since the last tag: `release:prepare` runs `cog check` over the whole
-  history, and `mise run release:cog-check` names the commits that fail.
+- Every commit since the last `vX.Y.Z` tag follows Conventional Commits:
+  `release:prepare` runs `cog check` over that range — the whole history
+  before the first release — and `mise run release:cog-check` names the
+  commits that fail.
 - No other git or jj command touches this repository's worktrees while
   `release:prepare` runs. If the repo config sets
   `extensions.relativeWorktrees`, which cocogitto cannot read, the check unsets

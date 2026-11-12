@@ -27,6 +27,18 @@ set -uo pipefail
 # serialises them. A second run waits for the first and gives up after
 # DEVKIT_COG_LOCK_WAIT seconds (default 30).
 #
+# With no arguments the check covers the release being prepared and nothing
+# older: the commits since the newest vX.Y.Z tag reachable from HEAD, passed to
+# cog as an explicit `<tag>..HEAD` range, or the whole history when no such tag
+# exists yet. The range is spelled out because `cog check --from-latest-tag`
+# needs `tag_prefix = "v"` in cog.toml and otherwise fails with "unable to get
+# any tag", and history from before a repo adopted Conventional Commits cannot
+# be rewritten. Any argument turns the default off and goes to cog as given.
+#
+# The tags are read from git rather than jj because git is what cog reads: jj
+# exports its tags into the colocated repository, and a jj workspace has a .git
+# of its own.
+#
 # COG overrides the binary (tests use it); it defaults to `cog` on PATH.
 
 KEY="extensions.relativeWorktrees"
@@ -38,6 +50,18 @@ say() { echo "cog-check: $*" >&2; }
 # Not a git repository (a jj workspace has no .git): there is no config to
 # fix, and cog reports the problem itself.
 common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exec "${COG}" check "$@"
+
+if [[ $# -eq 0 ]]; then
+  tags=$(git tag -l 'v[0-9]*' --merged HEAD) || { say "could not list the v* tags reachable from HEAD"; exit 1; }
+  latest=$(printf '%s\n' "${tags}" \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$' | sort -V | tail -1 || true)
+  if [[ -n "${latest}" ]]; then
+    say "checking the commits since ${latest}"
+    set -- "${latest}..HEAD"
+  else
+    say "no v* tag yet: checking the whole history"
+  fi
+fi
 
 lock="${common}/devkit-cog-check.lock"
 locked=false

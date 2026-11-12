@@ -2,3 +2,8 @@
 [tools]
 shellcheck = "latest"
 dprint = "latest"
+# The release task tests run the real tasks in throwaway repositories outside
+# this checkout, where a mise shim finds no version, so `mise run test` needs
+# the tools those tasks call on its own PATH. jj comes from the system.
+go = "1.27.3"
+git-cliff = "2.14.2"

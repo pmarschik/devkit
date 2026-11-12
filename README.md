@@ -243,8 +243,12 @@ and there is no `go.work.sum` to sync.
 Run `mise run release:push --dry-run` to check the prepared state and print
 what would be pushed. It reaches no remote and changes nothing locally.
 
-`release:prepare` runs `cog check` through `release:cog-check`, over the whole
-history. cocogitto 7.0.0 links libgit2 1.9.2, which refuses a repository whose
+`release:prepare` runs `cog check` through `release:cog-check`, over the
+commits of the release being prepared: the range from the newest `vX.Y.Z` tag
+reachable from `HEAD`, or the whole history before the first release. The range
+goes to cog spelled out, so no `tag_prefix` is needed in `cog.toml`; history
+from before a repo adopted Conventional Commits stays out of the check. Any
+argument passed to `release:cog-check` replaces the default range. cocogitto 7.0.0 links libgit2 1.9.2, which refuses a repository whose
 config sets `extensions.relativeWorktrees` — git writes that key for
 `git worktree add --relative-paths` — and `GIT_CONFIG_*` overrides do not reach
 it. The task unsets that one key with `git config --local` right before `cog`

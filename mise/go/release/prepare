@@ -62,7 +62,9 @@ if [[ "${FORCE}" == "false" && "${SKIP_COG}" == "false" ]]; then
   info "Checking conventional commits…"
   # Through the wrapper, not cog directly: cocogitto cannot open a repository
   # that sets extensions.relativeWorktrees, and the wrapper unsets that key for
-  # the length of the run. See the comment at the top of cog-check.
+  # the length of the run. Called with no arguments, it checks only this
+  # release's commits — the ones since the newest v* tag, or all of them before
+  # the first release. See the comment at the top of cog-check.
   "$(dirname "$0")/cog-check" 2>&1 | sed 's/^/       /' || die "cog check failed — fix commits before releasing, or pass --skip-cog."
   success "Conventional commits OK"
   echo ""
@@ -76,8 +78,12 @@ if [[ -z "${version}" ]]; then
   # real one — a bad config, an unknown revision — and used to be swallowed into
   # a silent 0.1.0 that wrote a changelog and pinned every go.mod to a version
   # nobody meant. So it stops here, with git cliff's own message.
+  #
+  # The jj pattern is quoted: jj 0.47 rejects a bare glob:v[0-9]* as a syntax
+  # error, and swallowing that error read as "no tags" and announced a first
+  # release in a repo that already had v2.0.0.
   if [[ "${VCS}" == "jj" ]]; then
-    root_tags=$(jj tag list 'glob:v[0-9]*' 2>/dev/null || true)
+    root_tags=$(jj tag list 'glob:"v[0-9]*"') || die "jj tag list failed (output above)"
   else
     root_tags=$(git tag -l 'v[0-9]*')
   fi
