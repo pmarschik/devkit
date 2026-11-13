@@ -81,11 +81,17 @@ if [[ -z "${version}" ]]; then
   # a silent 0.1.0 that wrote a changelog and pinned every go.mod to a version
   # nobody meant. So it stops here, with git cliff's own message.
   #
-  # The jj pattern is quoted: jj 0.47 rejects a bare glob:v[0-9]* as a syntax
-  # error, and swallowing that error read as "no tags" and announced a first
-  # release in a repo that already had v2.0.0.
+  # jj is asked for glob:v* and the digit is checked here. jj 0.47 parses a
+  # name pattern as an expression and rejects a bare glob:v[0-9]* as a syntax
+  # error; the quoted glob:"v[0-9]*" it wants is taken literally, quotes and
+  # all, by a jj that still splits the pattern at the colon, and matches
+  # nothing there. glob:v* means the same thing to both. A failing listing
+  # stops here with jj's own message: swallowing it once read as "no tags" and
+  # rewrote a repo at v0.9.0 as its first release. An empty list is the only
+  # thing that means a first release.
   if [[ "${VCS}" == "jj" ]]; then
-    root_tags=$(jj tag list 'glob:"v[0-9]*"') || die "jj tag list failed (output above)"
+    jj_tags=$(jj tag list 'glob:v*') || die "jj tag list failed (output above)"
+    root_tags=$(grep '^v[0-9]' <<< "${jj_tags}" || true)
   else
     root_tags=$(git tag -l 'v[0-9]*')
   fi
