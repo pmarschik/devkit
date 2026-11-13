@@ -50,6 +50,8 @@ mise/go/                  <- the include path
 ├── typos
 ├── setup
 ├── build
+├── run
+├── install
 ├── sync-golangci
 ├── check/                <- a task prefix
 │   ├── _default          <- check, not check:_default
@@ -164,11 +166,18 @@ under this repo's config.
 | `tidy`          | `go mod tidy` in every module, in parallel               |
 | `typos`         | Spell check                                              |
 | `setup`         | `go mod download` and `hk install`                       |
-| `build`         | `go build ./...`                                         |
+| `build`         | `go build ./...`, plus the `DEVKIT_MAIN` binary if set   |
+| `run`           | `go run` of `DEVKIT_MAIN`, arguments passed through      |
+| `install`       | `go install` of `DEVKIT_MAIN`                            |
 | `sync-golangci` | Composes `.config/golangci.yml` from here plus overrides |
 
 `lint` and `test` forward extra arguments, and both take `--no-cache`.
 `sync-golangci --diff-only` reports drift without writing.
+
+`DEVKIT_MAIN` names the main package of a repo that ships a binary, for example
+`DEVKIT_MAIN = "./cmd/tool"` under `[env]` in `.config/mise/config.toml`. `build`
+then also writes the binary to the working directory, and `run` and `install`
+work; without it they stop and say what to set. A library leaves it unset.
 
 #### Adding a gate of your own
 

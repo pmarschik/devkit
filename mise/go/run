@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Run the main package named in DEVKIT_MAIN, passing the arguments through"
+set -euo pipefail
+if [[ -z "${DEVKIT_MAIN:-}" ]]; then
+  echo "  ✖  run needs DEVKIT_MAIN, the main package to run (for example ./cmd/tool)." >&2
+  echo "     Set it under [env] in .config/mise/config.toml." >&2
+  exit 1
+fi
+exec go run "${DEVKIT_MAIN}" "$@"

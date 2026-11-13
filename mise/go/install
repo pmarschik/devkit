@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Install the main package named in DEVKIT_MAIN"
+#MISE depends=["tidy"]
+set -euo pipefail
+if [[ -z "${DEVKIT_MAIN:-}" ]]; then
+  echo "  ✖  install needs DEVKIT_MAIN, the main package to install (for example ./cmd/tool)." >&2
+  echo "     Set it under [env] in .config/mise/config.toml." >&2
+  exit 1
+fi
+go install "${DEVKIT_MAIN}"

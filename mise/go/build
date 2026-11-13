@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-#MISE description="Build the project"
+#MISE description="Build the project; with DEVKIT_MAIN set, also write its binary"
 #MISE alias="bld"
 #MISE depends=["tidy"]
 #MISE sources=["**/*.go", "go.mod", "go.sum"]
 set -euo pipefail
+# A library only needs to compile. A repo that ships a binary names its main
+# package in DEVKIT_MAIN (for example ./cmd/tool) and gets the binary written to
+# the working directory under the package's directory name, as `go build` does.
 go build ./...
+if [[ -n "${DEVKIT_MAIN:-}" ]]; then
+  go build "${DEVKIT_MAIN}"
+fi
