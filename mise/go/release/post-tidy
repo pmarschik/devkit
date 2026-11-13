@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Update go.sum files post-publish — recovery step; release:push runs this automatically"
+#MISE hide=true
 set -euo pipefail
 # shellcheck source=../_lib.sh
 source "$(dirname "$0")/../_lib.sh"

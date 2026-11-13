@@ -239,6 +239,10 @@ other module in `go.work`.
 | `release:post-tidy` | Redoes the `go.sum` step when the proxy was still catching up        |
 | `release:cog-check` | `cog check`, unsetting `extensions.relativeWorktrees` around the run |
 
+Both `release:post-tidy` and `release:cog-check` are hidden from `mise tasks`
+(`mise tasks ls --hidden` lists them): `release:prepare` and `release:push` run
+them. They stay runnable by name for recovery.
+
 The module set and the origin decide which steps run. Nothing is configured:
 
 | Repo                                 | Tags              | Pinned requires | Release notes (`gh`) | Proxy wait + `go.sum` tidy |

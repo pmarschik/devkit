@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Run cog check, working around a git extension cocogitto cannot read"
+#MISE hide=true
 set -uo pipefail
 
 # Usage: mise run release:cog-check [-- <cog check args>]
